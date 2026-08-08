@@ -1,0 +1,189 @@
+"""Regression tests for the API guards (acceptance §10.4).
+
+Each asserts the *guard fires*, not merely that the happy path works.
+The unifying failure mode these prevent: everything runs and the
+geometry is quietly wrong.
+"""
+
+import warnings
+
+import numpy as np
+import pytest
+
+import exfield
+
+
+def _line_mesh(points, extra_branch=None):
+    """Build a tiny 1-D linear-Lagrange mesh through given points."""
+    lines = ["EX Version: 2", "Region: /", "!#nodeset nodes",
+             "Shape. Dimension=0", "#Fields=1",
+             "1) coordinates, coordinate, rectangular cartesian, real, "
+             "#Components=3",
+             " x. #Values=1 (value)", " y. #Values=1 (value)",
+             " z. #Values=1 (value)"]
+    for i, p in enumerate(points, start=1):
+        lines.append(f"Node: {i}")
+        lines.append(" " + " ".join(f"{v}" for v in p))
+    lines += ["!#mesh mesh1d, dimension=1, nodeset=nodes",
+              "Shape. Dimension=1, line",
+              "#Scale factor sets=0", "#Nodes=2", "#Fields=1",
+              "1) coordinates, coordinate, rectangular cartesian, real, "
+              "#Components=3"]
+    for c in "xyz":
+        lines += [f" {c}. l.Lagrange, no modify, standard node based.",
+                  "  #Nodes=2",
+                  "  1. #Values=1", "   Value labels: value",
+                  "  2. #Values=1", "   Value labels: value"]
+    pairs = [(i, i + 1) for i in range(1, len(points))]
+    if extra_branch:
+        pairs.append(extra_branch)
+    for e, (a, b) in enumerate(pairs, start=1):
+        lines += [f"Element: {e}", " Nodes:", f" {a} {b}"]
+    return exfield.loads("\n".join(lines) + "\n")
+
+
+@pytest.fixture
+def chain_mesh():
+    # 4 nodes along x with unequal element lengths (1, 3, 1)
+    return _line_mesh([(0, 0, 0), (1, 0, 0), (4, 0, 0), (5, 0, 0)])
+
+
+def make_branching():
+    """1-D mesh where node 2 belongs to three elements (1-2, 2-3, 2-4)."""
+    pts = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (1, 1, 0)]
+    return _line_mesh(pts, extra_branch=(2, 4))
+
+
+class TestArclengthGuards:
+    def test_branching_total_refused(self):
+        mesh = make_branching()
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError, match="branching|simple path"):
+            exfield.ArclengthTable.build(ev)
+
+    def test_explicit_chain_allowed_on_branching_mesh(self):
+        mesh = make_branching()
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        table = exfield.ArclengthTable.build(ev, element_ids=[1, 2])
+        assert table.total == pytest.approx(2.0)
+
+    def test_disconnected_ids_refused(self, chain_mesh):
+        # give elements 1 and 3, skipping 2 — not a connected chain
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError):
+            exfield.ArclengthTable.build(ev, element_ids=[1, 3])
+
+    def test_arclength_at_is_not_fraction_times_total(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        table = exfield.ArclengthTable.build(ev)
+        # element lengths 1, 3, 1: total 5. Midpoint of element 2 is at
+        # arclength 2.5; "element fraction" naive answer would be wrong.
+        assert table.total == pytest.approx(5.0)
+        assert table.arclength_at(2, 0.5) == pytest.approx(2.5)
+        assert table.element_lengths() == pytest.approx([1.0, 3.0, 1.0])
+        eid, xi = table.location_at(2.5)
+        assert eid == 2 and xi == pytest.approx(0.5)
+
+    def test_nonmonotonic_parameter_refused(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        table = exfield.ArclengthTable.build(ev)
+        # y is constant 0 -> not monotonic; must refuse rather than
+        # silently produce a garbage parameter mapping
+        with pytest.raises(ValueError, match="monotonic"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                table.attach_parameter(chain_mesh.fields["coordinates"],
+                                       component=1)
+
+    def test_zinc_order_mode(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        t = exfield.ArclengthTable.build(ev, order="zinc")
+        assert t.order == exfield.ArclengthTable.ZINC_ORDER
+
+
+class TestEvaluatorGuards:
+    def test_takes_field_not_arbitrary_object(self):
+        with pytest.raises(TypeError, match="Field"):
+            exfield.Evaluator(42)
+
+    def test_mesh_resolves_or_raises_on_ambiguity(self, vagus_mesh):
+        # vagus mesh has a field literally named 'coordinates' -> resolves
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ev = exfield.Evaluator(vagus_mesh)
+        assert ev.field.name == "coordinates"
+
+    def test_normalized_field_warns(self, vagus_mesh):
+        """Building an Evaluator on the material field runs perfectly and
+        returns dimensionless nonsense — so it must at least warn."""
+        with pytest.warns(UserWarning, match="material|normalis"):
+            exfield.Evaluator(vagus_mesh.fields["vagus coordinates"],
+                              dimension=1)
+
+
+class TestInverseGuards:
+    def test_branching_requires_element_ids(self):
+        mesh = make_branching()
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError, match="branch"):
+            exfield.find_location(ev, [1.5, 0.0, 0.0])
+        # explicit subset works
+        loc = exfield.find_location(ev, [1.5, 0.0, 0.0],
+                                    element_ids=[1, 2])
+        assert loc.element_id == 2
+        assert loc.residual < 1e-9
+
+    def test_boundary_flag_on_projection_past_end(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        loc = exfield.find_location(ev, [7.0, 0.0, 0.0])
+        assert loc.element_id == 3
+        assert loc.xi[0] == pytest.approx(1.0)
+        assert loc.boundary          # explicit indicator, not just residual
+        assert loc.residual == pytest.approx(2.0)
+
+
+class TestEmbeddedGuards:
+    def test_max_residual_is_mandatory(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError, match="max_residual"):
+            exfield.EmbeddedPoints.from_world(ev, [[1.0, 0.0, 0.0]])
+
+    def test_max_residual_fires(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError, match="residual"):
+            exfield.EmbeddedPoints.from_world(
+                ev, [[1.0, 5.0, 0.0]], max_residual=0.5)
+
+    def test_nan_count_reported(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        table = exfield.ArclengthTable.build(ev, element_ids=[1, 2])
+        emb = exfield.EmbeddedPoints(
+            element_ids=[1, 3], xis=[[0.5], [0.5]])
+        values, nan_count = emb.arclength(table)
+        assert nan_count == 1              # element 3 is off the chain
+        assert np.isnan(values[1])
+        assert values[0] == pytest.approx(0.5)
+
+
+class TestFingerprintGuards:
+    def test_mismatch_raises(self):
+        a = exfield.make_fingerprint("3D Heart 1", "1.0",
+                                     {"Number of elements up RV": 4})
+        b = exfield.make_fingerprint("3D Heart 1", "1.0",
+                                     {"Number of elements up RV": 3})
+        with pytest.raises(exfield.FingerprintMismatch):
+            exfield.check_fingerprints(a, b)
+
+    def test_one_sided_none_raises(self):
+        a = exfield.make_fingerprint("t", "1", {})
+        with pytest.raises(exfield.FingerprintMismatch):
+            exfield.check_fingerprints(a, None)
+
+    def test_embedded_points_check(self, chain_mesh):
+        chain_mesh.fingerprint = exfield.make_fingerprint("t", "1", {"o": 1})
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        emb = exfield.EmbeddedPoints.from_world(
+            ev, [[1.0, 0.0, 0.0]], max_residual=0.1)
+        chain_mesh.fingerprint = exfield.make_fingerprint("t", "1", {"o": 2})
+        with pytest.raises(exfield.FingerprintMismatch):
+            emb.to_world(ev)
