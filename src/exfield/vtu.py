@@ -357,7 +357,9 @@ def export_vtu(mesh, path, field=None, dimension=None, element_ids=None,
         except EvaluationError:
             continue
         span = max(span, float(np.abs(x).max()))
-    quantum = (span or 1.0) * (1e-9 if dedup else 1e-16)
+    # quantum must live in the same units as the pooled points, which
+    # are scaled — otherwise scale changes topology, not just units
+    quantum = (span or 1.0) * (abs(scale) or 1.0) * (1e-9 if dedup else 1e-16)
     pool = _PointPool(quantum)
 
     connectivity = []

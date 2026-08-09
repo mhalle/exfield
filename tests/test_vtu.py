@@ -166,6 +166,18 @@ class TestBezierExport:
         span = np.ptp(arrays[("Points", "Points")], axis=0)
         assert 100 < span.max() < 1000    # ~500 mm nerve, was ~5e5 µm
 
+    def test_dedup_is_scale_invariant(self, cube_mesh, tmp_path):
+        """Scale must change units, not topology. The dedup quantum was
+        computed from unscaled coordinates while scaled ones went into
+        the pool: scale=1e-12 collapsed a cube's 64 control points to 1."""
+        counts = {}
+        for scale in (1.0, 1e-3, 1e-12):
+            summary = exfield.export_vtu(
+                cube_mesh, str(tmp_path / f"cube_{scale:g}.vtu"),
+                groups=False, scale=scale)
+            counts[scale] = summary["points"]
+        assert len(set(counts.values())) == 1, counts
+
     def test_inherited_2d_export(self, vagus_mesh, tmp_path):
         """2-D epineurium (serendipity) plus face-inherited quads."""
         path = str(tmp_path / "vagus2d.vtu")

@@ -41,6 +41,11 @@ class Field:
         self.value_type = value_type            # "real"|"integer"|"string"|"element_xi"
         self.number_of_components = number_of_components
         self.component_names = [str(i + 1) for i in range(number_of_components)]
+        # flipped by the reader once a header has declared real component
+        # names, so a later redeclaration can be checked against them
+        # (they are parsed after the field is merged, so
+        # matches_declaration cannot see them)
+        self.component_names_declared = False
         self.coordinate_system = coordinate_system  # e.g. "rectangular cartesian"
         self.focus = focus
         self.field_type = field_type            # "general"|"constant"
@@ -58,7 +63,11 @@ class Field:
                 and self.cm_type == other.cm_type
                 and self.value_type == other.value_type
                 and self.number_of_components == other.number_of_components
-                and self.field_type == other.field_type)
+                and self.field_type == other.field_type
+                and self.coordinate_system == other.coordinate_system
+                and self.focus == other.focus
+                and self.host_mesh_name == other.host_mesh_name
+                and self.host_mesh_dimension == other.host_mesh_dimension)
 
     def __repr__(self):
         return (f"Field({self.name!r}, {self.cm_type}, {self.value_type}, "

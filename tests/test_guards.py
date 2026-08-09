@@ -141,6 +141,22 @@ class TestInverseGuards:
         assert loc.boundary          # explicit indicator, not just residual
         assert loc.residual == pytest.approx(2.0)
 
+    def test_exact_tie_at_shared_endpoint_is_ambiguous(self, chain_mesh):
+        """A point at a node shared by two elements maps with residual 0
+        in both — that address IS ambiguous. A strict < comparison made
+        0 < 0 report unambiguous."""
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        loc = exfield.find_location(ev, [1.0, 0.0, 0.0])   # node 2: elem 1|2
+        assert loc.residual == pytest.approx(0.0, abs=1e-12)
+        assert loc.runner_up_residual == pytest.approx(0.0, abs=1e-12)
+        assert loc.ambiguous
+
+    def test_clearly_interior_point_is_not_ambiguous(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        loc = exfield.find_location(ev, [2.5, 0.0, 0.0])   # mid element 2
+        assert loc.residual == pytest.approx(0.0, abs=1e-12)
+        assert not loc.ambiguous
+
 
 class TestEmbeddedGuards:
     def test_max_residual_is_mandatory(self, chain_mesh):
@@ -153,6 +169,15 @@ class TestEmbeddedGuards:
         with pytest.raises(ValueError, match="residual"):
             exfield.EmbeddedPoints.from_world(
                 ev, [[1.0, 5.0, 0.0]], max_residual=0.5)
+
+    def test_mismatched_collection_lengths_rejected(self):
+        """Unequal element_ids/xis/names used to zip-truncate silently:
+        len(obj) said 2 while iteration yielded 1 point."""
+        with pytest.raises(ValueError, match="length"):
+            exfield.EmbeddedPoints(element_ids=[1, 2], xis=[[0.5]])
+        with pytest.raises(ValueError, match="names"):
+            exfield.EmbeddedPoints(element_ids=[1, 2],
+                                   xis=[[0.5], [0.5]], names=["only-one"])
 
     def test_nan_count_reported(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)

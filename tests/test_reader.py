@@ -190,6 +190,58 @@ class TestDeclined:
             exfield.loads(text)
 
 
+def _redeclared_field_text(element_coordinate_system="rectangular cartesian",
+                           element_component="x"):
+    """One field declared in a node header, redeclared in the element
+    header — legal EX, but the declarations must agree."""
+    return f"""EX Version: 2
+Region: /
+!#nodeset nodes
+Shape. Dimension=0
+#Fields=1
+1) coordinates, coordinate, rectangular cartesian, real, #Components=1
+ x. #Values=1 (value)
+Node: 1
+ 0.0
+Node: 2
+ 1.0
+!#mesh mesh1d, dimension=1, nodeset=nodes
+Shape. Dimension=1, line
+#Scale factor sets=0
+#Nodes=2
+#Fields=1
+1) coordinates, coordinate, {element_coordinate_system}, real, #Components=1
+ {element_component}. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+Element: 1
+ Nodes:
+ 1 2
+"""
+
+
+class TestRedeclaration:
+    """Redeclaring a field with conflicting metadata must raise, not
+    silently keep whichever declaration came first."""
+
+    def test_consistent_redeclaration_accepted(self):
+        mesh = exfield.loads(_redeclared_field_text())
+        assert mesh.fields["coordinates"].coordinate_system \
+            == "rectangular cartesian"
+
+    def test_conflicting_coordinate_system_rejected(self):
+        with pytest.raises(ExSyntaxError, match="redeclared"):
+            exfield.loads(_redeclared_field_text(
+                element_coordinate_system="cylindrical polar"))
+
+    def test_conflicting_component_name_rejected(self):
+        with pytest.raises(ExSyntaxError, match="component name"):
+            exfield.loads(_redeclared_field_text(element_component="theta"))
+
+
 class TestStrings:
     def test_quoted_string_with_escapes(self):
         text = (

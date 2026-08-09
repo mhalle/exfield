@@ -283,7 +283,9 @@ class EXReader:
         if existing is not None:
             if not existing.matches_declaration(field):
                 raise self.error(
-                    f"Field {field.name} redeclared with different type")
+                    f"Field {field.name} redeclared with a conflicting "
+                    f"declaration (type, components, coordinate system, "
+                    f"focus, or element:xi host mesh differs)")
             return existing
         field.mesh = model
         model.fields[field.name] = field
@@ -374,6 +376,12 @@ class EXReader:
             if not componentName:
                 raise self.error(
                     f"Error getting component name for field {field.name}")
+            if (field.component_names_declared
+                    and field.component_names[c] != componentName):
+                raise self.error(
+                    f"Field {field.name} redeclared with different component "
+                    f"name {componentName!r} (was "
+                    f"{field.component_names[c]!r})")
             field.component_names[c] = componentName
             if self.s.getc() != ".":
                 raise self.error("Missing required '.' after component name")
@@ -394,6 +402,7 @@ class EXReader:
             else:
                 self.s.read_key_value_map(",")
             nfts.append(nft)
+        field.component_names_declared = True
         self.nodeTemplate.header_fields.append(field)
         self.nodeTemplate.nfts[field.name] = nfts
         return True
@@ -667,6 +676,12 @@ class EXReader:
             if not componentName:
                 raise self.error(
                     f"Error reading component name for field {field.name}")
+            if (field.component_names_declared
+                    and field.component_names[c] != componentName):
+                raise self.error(
+                    f"Field {field.name} redeclared with different component "
+                    f"name {componentName!r} (was "
+                    f"{field.component_names[c]!r})")
             field.component_names[c] = componentName
             if s.getc() != ".":
                 raise self.error("Missing required '.' after component name")
@@ -795,6 +810,7 @@ class EXReader:
                      for t in terms), default=0) > nodeCount:
                 raise self.error("Too many nodes referenced")
             eft.validate()
+        field.component_names_declared = True
         template.fields.append(field)
 
     def _parseValueLabelExpressions(self, rest, valueCount, termCount,

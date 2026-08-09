@@ -41,7 +41,14 @@ class EmbeddedPoints:
         self.element_ids = list(element_ids)
         self.xis = [np.atleast_1d(np.asarray(x, dtype=float)) for x in xis]
         n = len(self.element_ids)
+        if len(self.xis) != n:
+            raise ValueError(
+                f"element_ids and xis disagree in length ({n} vs "
+                f"{len(self.xis)}); later zips would silently drop points")
         self.names = list(names) if names is not None else [None] * n
+        if len(self.names) != n:
+            raise ValueError(
+                f"names length {len(self.names)} != {n} points")
         self.metadata = metadata if metadata is not None else {}
         self.fingerprint = fingerprint
 

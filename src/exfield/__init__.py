@@ -43,7 +43,7 @@ from .mesh import (Element, ElementFieldTemplate, ElementShape,
                    NodeFieldTemplate, Nodeset, ScaleFactorSet, Term,
                    VALUE_LABELS)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "load", "loads", "dump", "dumps",

@@ -39,7 +39,9 @@ class Location:
 
     @property
     def ambiguous(self):
-        return self.runner_up_residual < 2.0 * self.residual
+        # <= so an exact tie (both residuals 0.0 at a shared endpoint)
+        # is flagged; strict < would report 0 < 0 as unambiguous
+        return self.runner_up_residual <= 2.0 * self.residual
 
 
 def _has_branch_points(evaluator):
