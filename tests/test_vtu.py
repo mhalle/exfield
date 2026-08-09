@@ -11,6 +11,7 @@ otherwise — run them via:  uv run --with vtk pytest tests/test_vtu.py
 
 import base64
 import json
+import math
 import os
 import struct
 import warnings
@@ -24,6 +25,79 @@ import exfield
 from exfield.vtu import point_index_from_ijk
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
+
+
+# ------------------------------------------- synthetic tricubic block
+#
+# The vagus corpus (the only exact-Bezier golden data) has no element
+# with interior control points along xi3: its boxes are cubic*linear*
+# linear. That makes VTK's higher-order hexahedron xi3-edge slots
+# structurally unexercisable, and it hid a real corruption of every
+# tricubic cell. This block is the minimal fixture that reaches them:
+# two curved tricubic-Hermite hexes sharing a face, hence sharing four
+# cubic-cubic edges that carry interior control points in both
+# directions.
+
+
+def _block_warp(u, v, w):
+    return (u + 0.30 * v * w,
+            v + 0.40 * math.sin(1.1 * u) + 0.25 * w * w,
+            w + 0.35 * u * v - 0.20 * math.cos(0.9 * v))
+
+
+def _block_warp_derivatives(u, v, w):
+    return ((1.0, 0.44 * math.cos(1.1 * u), 0.35 * v),
+            (0.30 * w, 1.0, 0.35 * u + 0.18 * math.sin(0.9 * v)),
+            (0.30 * v, 0.50 * w, 1.0))
+
+
+def tricubic_block_exf(n_elements=2):
+    """EX text: a 1-D row of ``n_elements`` curved tricubic hexes."""
+    nodes = {}
+    for k in range(2):
+        for j in range(2):
+            for i in range(n_elements + 1):
+                nodes[(i, j, k)] = len(nodes) + 1
+    lines = ["EX Version: 2", "Region: /", "!#nodeset nodes",
+             "Shape. Dimension=0", "#Fields=1",
+             "1) coordinates, coordinate, rectangular cartesian, real,"
+             " #Components=3"]
+    lines += [f" {c}. #Values=4 (value,d/ds1,d/ds2,d/ds3)" for c in "xyz"]
+    for (i, j, k), n in sorted(nodes.items(), key=lambda kv: kv[1]):
+        u, v, w = float(i), float(j), float(k)
+        value = _block_warp(u, v, w)
+        du, dv, dw = _block_warp_derivatives(u, v, w)
+        lines.append(f"Node: {n}")
+        lines += ["  " + "  ".join(f"{x: .15e}" for x in
+                                   (value[c], du[c], dv[c], dw[c]))
+                  for c in range(3)]
+    lines += ["!#mesh mesh3d, dimension=3, nodeset=nodes",
+              "Shape. Dimension=3, line*line*line",
+              "#Scale factor sets=0", "#Nodes=8", "#Fields=1",
+              "1) coordinates, coordinate, rectangular cartesian, real,"
+              " #Components=3"]
+    for c in "xyz":
+        lines += [f" {c}. c.Hermite*c.Hermite*c.Hermite, no modify,"
+                  " standard node based.", "  #Nodes=8"]
+        for local in range(1, 9):
+            lines += [f"  {local}. #Values=3",
+                      "   Value labels: value d/ds1 d/ds2",
+                      "  0. #Values=1", "   Value labels: zero",
+                      f"  {local}. #Values=1", "   Value labels: d/ds3",
+                      "  0. #Values=3", "   Value labels: zero zero zero"]
+    for e in range(n_elements):
+        ids = [nodes[(e + di, dj, dk)]
+               for dk in (0, 1) for dj in (0, 1) for di in (0, 1)]
+        lines += [f"Element: {e + 1}", " Nodes:",
+                  " " + " ".join(str(x) for x in ids)]
+    return "\n".join(lines) + "\n"
+
+
+@pytest.fixture(scope="module")
+def tricubic_block(tmp_path_factory):
+    path = tmp_path_factory.mktemp("block") / "tricubic_block.exf"
+    path.write_text(tricubic_block_exf(2))
+    return exfield.load(str(path))
 
 
 # ------------------------------------------------------ ordering pin
@@ -97,6 +171,11 @@ def _parse_vtu(path):
     return piece, arrays
 
 
+def _file_version(path):
+    root = ET.parse(path).getroot()
+    return tuple(int(v) for v in root.get("version").split("."))
+
+
 @pytest.fixture(scope="module")
 def exported(vagus_mesh, tmp_path_factory):
     path = str(tmp_path_factory.mktemp("vtu") / "vagus3d.vtu")
@@ -125,6 +204,29 @@ class TestBezierExport:
         offsets = arrays[("Cells", "offsets")]
         assert offsets[-1] == len(conn)
         assert np.all(np.diff(offsets) == 16)         # 4x2x2 lattices
+
+    def test_higher_order_files_declare_corrected_ordering(self, exported,
+                                                           tmp_path):
+        """A .vtu declaring version <= 2.0 is read as using the OLD
+        higher-order hexahedron ordering, in which the interior points
+        of VTK edges 10 and 11 (the two xi3 edges on the xi2=max face)
+        are swapped. VTK applies that swap on read, so declaring 1.0 —
+        as this writer used to — silently corrupted every hexahedral
+        cell with interior control points along xi3. Do not lower.
+        """
+        _mesh, path, _summary = exported
+        assert _file_version(path) >= (2, 1)
+
+    def test_tricubic_block_shares_a_face(self, tricubic_block, tmp_path):
+        path = str(tmp_path / "block.vtu")
+        summary = exfield.export_vtu(tricubic_block, path, dimension=3,
+                                     groups=False)
+        _piece, arrays = _parse_vtu(path)
+        assert list(arrays[("CellData", "HigherOrderDegrees")][0]) \
+            == [3, 3, 3]
+        # 2 x 64 lattice points, the 4x4 shared face pooled once
+        assert summary["points"] == 2 * 64 - 16
+        assert _file_version(path) >= (2, 1)
 
     def test_control_points_shared_between_cells(self, exported):
         _mesh, _path, summary = exported
@@ -343,3 +445,40 @@ class TestAgainstVTK:
                     interp - mat.evaluate(eid, xi)).max()))
         assert worst < 1e-9
         assert worst_m < 1e-9
+
+    def test_tricubic_readback_and_evaluate(self, vtk, tricubic_block,
+                                            tmp_path):
+        """Regression: full tricubic hexes sharing cubic-cubic edges.
+
+        The vagus golden mesh is cubic*linear*linear, so its xi3 edges
+        carry no interior control points and VTK's legacy higher-order
+        hexahedron edge swap was invisible there. Every cell of this
+        block reaches those slots; before the file-version fix the two
+        xi3 edges on the xi2=max face came back exchanged and this
+        residual was ~0.1 in a unit-sized geometry.
+        """
+        path = str(tmp_path / "tricubic_roundtrip.vtu")
+        exfield.export_vtu(tricubic_block, path, dimension=3, groups=False)
+        reader = vtk.vtkXMLUnstructuredGridReader()
+        reader.SetFileName(path)
+        reader.Update()
+        grid = reader.GetOutput()
+        assert grid.GetNumberOfCells() == len(tricubic_block.mesh3d)
+        ev = tricubic_block.evaluator("coordinates", dimension=3)
+        element_ids = grid.GetCellData().GetArray("element_id")
+        rng = np.random.default_rng(11)
+        worst = 0.0
+        for c in range(grid.GetNumberOfCells()):
+            cell = grid.GetCell(c)
+            assert cell.GetNumberOfPoints() == 64
+            eid = int(element_ids.GetTuple1(c))
+            for _ in range(40):
+                xi = rng.random(3)
+                x = [0.0, 0.0, 0.0]
+                weights = [0.0] * cell.GetNumberOfPoints()
+                cell.EvaluateLocation(vtk.reference(0), list(xi), x, weights)
+                ours = ev.evaluate(eid, xi)
+                scale = max(1.0, float(np.abs(ours).max()))
+                worst = max(worst,
+                            float(np.abs(np.array(x) - ours).max()) / scale)
+        assert worst < 1e-9, worst

@@ -237,10 +237,29 @@ def _data_array(name, array, n_components=1):
             f"{_b64(array)}\n</DataArray>\n")
 
 
+# VTU file-format version and higher-order point ordering.
+#
+# A .vtu declaring version <= 2.0 is read as using the OLD higher-order
+# hexahedron point ordering, in which the interior points of the two
+# xi3 edges on the xi2=max face (VTK edges 10 and 11) are swapped
+# relative to PointIndexFromIJK. VTK's reader silently applies that
+# swap to such files, so a correctly ordered tricubic lattice comes
+# back with those edges exchanged -- visible only on cells whose xi3
+# axis carries interior control points (degree >= 2 in xi3 together
+# with a hexahedral cell). We write the corrected ordering, so any
+# grid containing higher-order cells must declare >= 2.1. Grids of
+# purely linear cells are unaffected and stay at 1.0 for maximum
+# consumer compatibility.
+_VTU_VERSION_LINEAR = "1.0"
+_VTU_VERSION_HIGHER_ORDER = "2.1"
+
+
 def _write_vtu(path, points, connectivity, offsets, types, cell_data,
                point_data, degrees):
+    version = (_VTU_VERSION_HIGHER_ORDER if degrees is not None
+               else _VTU_VERSION_LINEAR)
     out = []
-    out.append('<VTKFile type="UnstructuredGrid" version="1.0" '
+    out.append(f'<VTKFile type="UnstructuredGrid" version="{version}" '
                'byte_order="LittleEndian" header_type="UInt64" '
                'compressor="vtkZLibDataCompressor">\n')
     out.append("<UnstructuredGrid>\n")
