@@ -7,6 +7,25 @@ uv sync
 Read, evaluate and write OpenCMISS-Zinc **EX/EXF finite element
 scaffolds** with **NumPy as the only runtime dependency**.
 
+**Status: alpha (0.4.x).** The library is golden-validated against
+Zinc 4.2.1 and battle-tested by the map-core pilots, but the API and
+any interchange conventions may still change between 0.x releases.
+Known gap stated up front: fingerprints are not serialized through
+`.exf` files, so cross-mesh address guards protect only meshes whose
+fingerprints are stamped in code (see the hazards section).
+
+## Installing
+
+Not yet on PyPI. From a checkout:
+
+```bash
+uv add --editable path/to/exfield      # or: pip install path/to/exfield
+```
+
+or build and install a wheel (`uv build` → `dist/exfield-*.whl`).
+Runtime dependency: NumPy only. Python ≥ 3.10 (suite passes on 3.10,
+3.12 and 3.14).
+
 Zinc *makes* scaffolds; exfield lets downstream NumPy/VTK code consume
 them without inheriting a 63 MB OpenGL-linked binary. Deliberately out
 of scope: fitting (use [`scaffoldfitter`](https://pypi.org/project/scaffoldfitter/)),
@@ -254,3 +273,15 @@ slot; face count comes from the shape; separator-retaining
 tokenisation), derivative versions at branch nodes, the golden Zinc
 comparison, write/read roundtrips (byte-stable), and a regression test
 for every guard above asserting the guard *fires*.
+
+## License and attribution
+
+Apache-2.0 (see `LICENSE`), with a `NOTICE` file. exfield is a
+from-scratch Python reimplementation — no source code was copied —
+but its reader/writer deliberately mirror the productions of
+OpenCMISS-Zinc's `import_finite_element.cpp` / `export_finite_element.cpp`
+(MPL-2.0, Auckland Bioengineering Institute) so the implementations
+review side by side, and the VTK higher-order point ordering is
+transcribed from VTK (BSD-3-Clause, Kitware). Test data derives from
+SPARC dataset 426 (CC-BY-4.0) and the sparc.client test fixtures; the
+test corpus optionally exercises a local Zinc source checkout.
