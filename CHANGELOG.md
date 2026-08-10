@@ -15,9 +15,9 @@ documented by the table below.
 
 | old | new | why |
 |---|---|---|
-| `Evaluator.evaluate_with_derivatives` | `Evaluator.value_and_jacobian` | says what it *returns* (both), instead of differing from `evaluate_derivatives` by the word "with"; follows the `value_and_grad` idiom |
+| `Evaluator.evaluate_with_derivatives` | `Evaluator.evaluate_values_and_derivatives` | says what it *returns* (both) instead of differing from `evaluate_derivatives` by the word "with", and stays parallel with the rest of the family (verb-first, plural, same vocabulary) |
 | `Evaluator.evaluate_many` | *deleted* | was an alias for batch `evaluate`; its existence implied `evaluate` was single-point-only, which is false — **all** evaluation methods take one xi or a batch |
-| `TensorProductBasis.evaluate_with_derivatives` | `.values_and_derivatives` | basis functions have values and derivatives, not a Jacobian |
+| `TensorProductBasis.evaluate_with_derivatives` | `.evaluate_values_and_derivatives` | same name at both layers |
 | `Mesh.mesh(dimension)` | `Mesh.element_mesh(dimension)` | `mesh.mesh(3)` was opaque; now matches the `mesh.element_meshes` dict it reads from |
 | `closest_point(...)` | `find_locations(...)` | it returns a list of `Location`, not points; plural pairs with `find_location` |
 | `Location.boundary` | `Location.at_boundary` | it is a bool; reads as an adjective now, like `ambiguous` |
@@ -27,7 +27,8 @@ documented by the table below.
 | `dump(model, path)`, `dumps(model)` | `dump(mesh, ...)`, `dumps(mesh)` | every other public function calls it `mesh` |
 
 Unchanged and worth stating, since they were the source of the
-confusion: `evaluate`, `evaluate_derivatives` and `value_and_jacobian`
+confusion: `evaluate`, `evaluate_derivatives` and
+`evaluate_values_and_derivatives`
 differ **only in what they return** — values, derivatives, or both in
 one pass. Every one of them accepts a single xi or an `(n, dimension)`
 batch.

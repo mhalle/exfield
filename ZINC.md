@@ -74,7 +74,7 @@ consume with exfield. Files round-trip both ways (see Part 2).
 | `fm.findFieldByName(n)` | `mesh.fields[n]` |
 | `Fieldcache` + `setMeshLocation` | arguments to `evaluate(element_id, xi)` |
 | `field.evaluateReal(cache, n)` | `ev.evaluate(element_id, xi)` |
-| `fm.createFieldDerivative(f, d)` | `ev.evaluate_derivatives(...)`; `ev.value_and_jacobian(...)` returns values and derivatives in one pass |
+| `fm.createFieldDerivative(f, d)` | `ev.evaluate_derivatives(...)`; `ev.evaluate_values_and_derivatives(...)` returns both in one pass |
 | `fm.findMeshByDimension(d)` | `mesh.mesh1d` / `mesh2d` / `mesh3d`, or `mesh.element_mesh(d)` |
 | `mesh.findElementByIdentifier(i)` | element ids are used directly |
 | `fm.findNodesetByName("nodes")` | `mesh.nodes`, `mesh.datapoints` (`None` if the file has none) |
@@ -135,7 +135,7 @@ res, dx = d1.evaluateReal(cache, 3)
 
 # exfield
 dx = ev.evaluate_derivatives(1155, [0.37])
-x, J = ev.value_and_jacobian(1155, xis)          # both, in one pass
+x, d = ev.evaluate_values_and_derivatives(1155, xis)   # both, one pass
 ```
 
 ### Groups

@@ -80,15 +80,15 @@ class TestBranchAndBound:
                                                element_ids=[eid])
             assert full.residual <= restricted.residual + 1e-9
 
-    def test_fused_value_and_jacobian(self, vagus_mesh):
+    def test_fused_values_and_derivatives(self, vagus_mesh):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ev = vagus_mesh.evaluator("coordinates", dimension=3)
         eid = sorted(vagus_mesh.mesh3d.elements)[5]
         xis = np.random.default_rng(2).random((30, 3))
-        x, J = ev.value_and_jacobian(eid, xis)
+        x, J = ev.evaluate_values_and_derivatives(eid, xis)
         assert np.allclose(x, ev.evaluate(eid, xis), atol=1e-13)
         assert np.allclose(J, ev.evaluate_derivatives(eid, xis),
                            atol=1e-13)
-        x1, J1 = ev.value_and_jacobian(eid, xis[0])
+        x1, J1 = ev.evaluate_values_and_derivatives(eid, xis[0])
         assert x1.shape == (3,) and J1.shape == (3, 3)

@@ -302,14 +302,15 @@ class Evaluator:
             derivs = np.einsum("kj,nkc->njc", A, derivs)
         return derivs[0] if single else derivs
 
-    def value_and_jacobian(self, element_id, xi):
+    def evaluate_values_and_derivatives(self, element_id, xi):
         """Values and their xi-derivatives together, in one pass.
 
-        Same inputs as :meth:`evaluate`; returns the pair the other two
-        methods return separately, sharing one element resolve and one
-        monomial evaluation — the fast path for Newton-type loops.
-        Single point -> ``(x (c,), J (d, c))``; batch ``(n, dimension)``
-        xi -> ``(x (n, c), J (n, d, c))``."""
+        Same inputs as :meth:`evaluate`; returns exactly what
+        :meth:`evaluate` and :meth:`evaluate_derivatives` return
+        separately, sharing one element resolve and one monomial
+        evaluation — the fast path for Newton-type loops. Single point
+        -> ``(values (c,), derivatives (d, c))``; batch ``(n,
+        dimension)`` xi -> ``(values (n, c), derivatives (n, d, c))``."""
         dimension, eid, A, xis, single = self._prepare_xi(element_id, xi)
         P, basis = self.element_parameters(eid, dimension)
         n = xis.shape[0]
@@ -317,7 +318,7 @@ class Evaluator:
             x = np.broadcast_to(P[0], (n, P.shape[1])).copy()
             J = np.zeros((n, self.dimension, P.shape[1]))
             return (x[0], J[0]) if single else (x, J)
-        phi, dphi = basis.values_and_derivatives(xis)
+        phi, dphi = basis.evaluate_values_and_derivatives(xis)
         x = phi @ P
         J = dphi @ P
         if A is not None:

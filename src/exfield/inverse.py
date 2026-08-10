@@ -185,7 +185,7 @@ def _gauss_newton_multi(evaluator, element_id, point, seeds, tol,
     pinned = np.zeros(k, dtype=bool)
     eye = 1e-12 * np.eye(dim)
     for _ in range(max_iterations):
-        x, J = evaluator.value_and_jacobian(element_id, xis)
+        x, J = evaluator.evaluate_values_and_derivatives(element_id, xis)
         r = x - point
         g = np.einsum("kdc,kc->kd", J, r)
         H = J @ np.swapaxes(J, 1, 2) + eye
