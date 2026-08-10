@@ -16,7 +16,8 @@ fingerprints are stamped in code (see the hazards section).
 
 ## Installing
 
-Not yet on PyPI. From a checkout:
+Not published to PyPI — this is an experimental project and doesn't
+claim a public name. From a checkout:
 
 ```bash
 uv add --editable path/to/exfield      # or: pip install path/to/exfield
