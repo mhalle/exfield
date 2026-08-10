@@ -9,6 +9,10 @@ landing 4 mm off the centreline is a different object from one landing
 on it — and ``from_world`` enforces a ``max_residual`` by default so the
 check is opt-out, not opt-in.
 
+:class:`HostedPath` adds order to the same machinery, for proxy
+structures whose world geometry is derived by evaluating a host rather
+than measured.
+
 Comparing addresses across meshes is only meaningful when both were
 built from the same template with the same discretisation options — see
 ``exfield.fingerprint``.
@@ -132,8 +136,79 @@ class EmbeddedPoints:
             check_fingerprints(self.fingerprint, other)
         except FingerprintMismatch as e:
             raise FingerprintMismatch(
-                f"EmbeddedPoints were created on a mesh with a different "
-                f"template fingerprint: {e}") from None
+                f"{type(self).__name__} was created on a mesh with a "
+                f"different template fingerprint: {e}") from None
 
     def __repr__(self):
         return f"EmbeddedPoints({len(self)} points)"
+
+
+class HostedPath(EmbeddedPoints):
+    """An *ordered* chain of material addresses in a host scaffold.
+
+    Where :class:`EmbeddedPoints` is an unordered set of landmarks, a
+    ``HostedPath`` is a path: the address order is the path order, and
+    ``to_world`` returns the vertices in that order. It exists for proxy
+    structures — a lymphatic chain running alongside the aorta, say —
+    whose geometry is not measured but *derived*: the control addresses
+    are anchored in the host's material coordinates, so refitting the
+    host to a subject moves the path for free. Nothing about the path
+    itself is ever fitted, which is why it stores addresses and not
+    coordinates.
+
+    What the path does **not** claim: interpolation between consecutive
+    addresses is undefined, because two addresses may sit in different
+    host elements and no element's basis spans them. The path is a
+    polyline over its addresses and nothing more — its resolution *is*
+    the number of addresses, and no cross-element smoothness or
+    continuity of tangent is asserted. Callers wanting a smooth curve
+    must supply enough addresses; they will not get one for free.
+
+    Parameters
+    ----------
+    host_group : name of the host group or chain the path is anchored
+        to. Carried because an address is only interpretable against the
+        structure it was authored on — ``(element 12, xi 0.5)`` means
+        nothing without knowing which host numbered that element.
+    """
+
+    def __init__(self, element_ids, xis, names=None, metadata=None,
+                 fingerprint=None, host_group=None):
+        super().__init__(element_ids, xis, names=names, metadata=metadata,
+                         fingerprint=fingerprint)
+        if len(self.element_ids) == 0:
+            raise ValueError(
+                "HostedPath requires at least one address: an empty path "
+                "has no geometry to derive, and would evaluate to an "
+                "empty polyline rather than raising downstream.")
+        self.host_group = host_group
+
+    @classmethod
+    def from_world(cls, evaluator, points, host_group=None, **kwargs):
+        """Project an ordered run of world points onto the host.
+
+        Input order is path order — this does not sort, resample or
+        otherwise second-guess the caller's sequence. ``max_residual``
+        stays mandatory, per :meth:`EmbeddedPoints.from_world`.
+        """
+        obj = super().from_world(evaluator, points, **kwargs)
+        obj.host_group = host_group
+        return obj
+
+    def world_arclengths(self, evaluator):
+        """Cumulative polyline arclength at each address, starting 0.0.
+
+        This is the length of the *polyline through the addresses*, not
+        the arclength of any host curve between them: it is a lower
+        bound on a curved path's true length, and it changes when
+        addresses are added. Returns an array of length ``len(self)``;
+        a one-address path returns ``[0.0]``. The fingerprint guard
+        fires here too, since the geometry comes from ``to_world``.
+        """
+        xyz = self.to_world(evaluator)
+        steps = np.linalg.norm(np.diff(xyz, axis=0), axis=1)
+        return np.concatenate([[0.0], np.cumsum(steps)])
+
+    def __repr__(self):
+        return (f"HostedPath({len(self)} addresses, "
+                f"host_group={self.host_group!r})")

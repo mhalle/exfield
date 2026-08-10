@@ -28,7 +28,7 @@ import gzip as _gzip
 
 from .basis import TensorProductBasis, parse_basis
 from .bezier import hermite_to_bezier_1d, hermite_to_bezier_matrix
-from .embedded import ArclengthValues, EmbeddedPoints
+from .embedded import ArclengthValues, EmbeddedPoints, HostedPath
 from .errors import (EvaluationError, ExError, ExSyntaxError,
                      FingerprintMismatch, UnsupportedExFeature)
 from .coordinates import to_rectangular_cartesian
@@ -55,7 +55,7 @@ __all__ = [
     "Evaluator", "ArclengthTable", "build_chain", "integrate",
     "to_rectangular_cartesian",
     "Location", "find_location", "closest_point",
-    "EmbeddedPoints", "ArclengthValues",
+    "EmbeddedPoints", "ArclengthValues", "HostedPath",
     "TensorProductBasis", "parse_basis",
     "hermite_to_bezier_1d", "hermite_to_bezier_matrix",
     "make_fingerprint", "check_fingerprints", "eft_signature",

@@ -190,6 +190,72 @@ class TestEmbeddedGuards:
         assert values[0] == pytest.approx(0.5)
 
 
+class TestHostedPath:
+    """A proxy path is ordered and derived; the guards protect both."""
+
+    def test_to_world_keeps_path_order(self, chain_mesh):
+        """Order is the payload: a path that silently sorted its
+        addresses would render as a different anatomical route."""
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        path = exfield.HostedPath(element_ids=[3, 1, 2],
+                                  xis=[[1.0], [0.0], [1.0]])
+        xyz = path.to_world(ev)
+        assert xyz[:, 0] == pytest.approx([5.0, 0.0, 4.0])
+
+    def test_world_arclengths_match_known_geometry(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        path = exfield.HostedPath(element_ids=[1, 1, 2],
+                                  xis=[[0.0], [1.0], [1.0]])
+        s = path.world_arclengths(ev)
+        assert s == pytest.approx([0.0, 1.0, 4.0])
+        assert np.all(np.diff(s) >= 0.0)
+
+    def test_single_address_arclength_is_zero(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        path = exfield.HostedPath(element_ids=[2], xis=[[0.5]])
+        assert path.world_arclengths(ev) == pytest.approx([0.0])
+
+    def test_empty_path_refused(self):
+        with pytest.raises(ValueError, match="at least one address"):
+            exfield.HostedPath(element_ids=[], xis=[])
+
+    def test_mismatched_collection_lengths_rejected(self):
+        with pytest.raises(ValueError, match="length"):
+            exfield.HostedPath(element_ids=[1, 2], xis=[[0.5]])
+
+    def test_fingerprint_guard_fires(self, chain_mesh):
+        """Same guard as EmbeddedPoints: addresses only mean something
+        on the template they were authored against."""
+        chain_mesh.fingerprint = exfield.make_fingerprint("t", "1", {"o": 1})
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        path = exfield.HostedPath.from_world(
+            ev, [[1.0, 0.0, 0.0], [4.0, 0.0, 0.0]], max_residual=0.1)
+        chain_mesh.fingerprint = exfield.make_fingerprint("t", "1", {"o": 2})
+        with pytest.raises(exfield.FingerprintMismatch):
+            path.to_world(ev)
+        with pytest.raises(exfield.FingerprintMismatch):
+            path.world_arclengths(ev)
+
+    def test_from_world_returns_hosted_path_with_residuals(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        path = exfield.HostedPath.from_world(
+            ev, [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]], max_residual=0.1,
+            host_group="aorta")
+        assert isinstance(path, exfield.HostedPath)
+        assert len(path) == 2
+        assert path.metadata["residual"] == pytest.approx([0.0, 0.0],
+                                                          abs=1e-9)
+        assert path.host_group == "aorta"
+
+    def test_host_group_round_trips(self, chain_mesh):
+        path = exfield.HostedPath(element_ids=[1], xis=[[0.5]],
+                                  host_group="thoracic_aorta")
+        assert path.host_group == "thoracic_aorta"
+        assert "thoracic_aorta" in repr(path)
+        assert exfield.HostedPath(element_ids=[1],
+                                  xis=[[0.5]]).host_group is None
+
+
 class TestFingerprintGuards:
     def test_mismatch_raises(self):
         a = exfield.make_fingerprint("3D Heart 1", "1.0",
