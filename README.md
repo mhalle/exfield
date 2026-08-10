@@ -16,16 +16,22 @@ fingerprints are stamped in code (see the hazards section).
 
 ## Installing
 
-Not published to PyPI — this is an experimental project and doesn't
-claim a public name. From a checkout:
+Not published to PyPI (the name is taken, and this experimental
+project doesn't claim one). Install from GitHub:
 
 ```bash
-uv add --editable path/to/exfield      # or: pip install path/to/exfield
+uv add git+https://github.com/mhalle/exfield
 ```
 
-or build and install a wheel (`uv build` → `dist/exfield-*.whl`).
-Runtime dependency: NumPy only. Python ≥ 3.10 (suite passes on 3.10,
-3.12 and 3.14).
+(or `pip install git+https://github.com/mhalle/exfield`), from a
+checkout (`uv add --editable path/to/exfield`), or build a wheel
+(`uv build` → `dist/exfield-*.whl`). Runtime dependency: NumPy only.
+Python ≥ 3.10 (suite passes on 3.10, 3.12 and 3.14).
+
+Note: the standalone repo runs 127 of the 186 tests — the 59-file
+Zinc corpus regression, the 42-scaffold SPARC-426 sweep and the
+live-VTK oracles need sibling checkouts/caches and skip loudly
+without them.
 
 Zinc *makes* scaffolds; exfield lets downstream NumPy/VTK code consume
 them without inheriting a 63 MB OpenGL-linked binary. Deliberately out
