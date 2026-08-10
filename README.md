@@ -39,6 +39,12 @@ of scope: fitting (use [`scaffoldfitter`](https://pypi.org/project/scaffoldfitte
 mesh generation (use [`scaffoldmaker`](https://pypi.org/project/scaffoldmaker/)),
 rendering, solvers and time-varying fields.
 
+**Coming from Zinc?** [ZINC.md](ZINC.md) is the translation guide:
+concept map, side-by-side snippets for every common task, the traps
+that specifically catch Zinc users — and, for Zinc authors, what
+mirrors which production, how the golden validation works, and where
+exfield deliberately differs.
+
 ```python
 import exfield
 
