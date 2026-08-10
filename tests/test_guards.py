@@ -13,8 +13,11 @@ import pytest
 import exfield
 
 
-def _line_mesh(points, extra_branch=None):
-    """Build a tiny 1-D linear-Lagrange mesh through given points."""
+def _line_mesh(points, extra_branch=None, pairs=None):
+    """Build a tiny 1-D linear-Lagrange mesh through given points.
+
+    ``pairs`` overrides the default sequential chain with explicit
+    (node, node) element connectivity."""
     lines = ["EX Version: 2", "Region: /", "!#nodeset nodes",
              "Shape. Dimension=0", "#Fields=1",
              "1) coordinates, coordinate, rectangular cartesian, real, "
@@ -34,9 +37,10 @@ def _line_mesh(points, extra_branch=None):
                   "  #Nodes=2",
                   "  1. #Values=1", "   Value labels: value",
                   "  2. #Values=1", "   Value labels: value"]
-    pairs = [(i, i + 1) for i in range(1, len(points))]
-    if extra_branch:
-        pairs.append(extra_branch)
+    if pairs is None:
+        pairs = [(i, i + 1) for i in range(1, len(points))]
+        if extra_branch:
+            pairs.append(extra_branch)
     for e, (a, b) in enumerate(pairs, start=1):
         lines += [f"Element: {e}", " Nodes:", f" {a} {b}"]
     return exfield.loads("\n".join(lines) + "\n")
@@ -157,12 +161,53 @@ class TestInverseGuards:
         assert loc.residual == pytest.approx(0.0, abs=1e-12)
         assert not loc.ambiguous
 
+    def test_touching_box_is_not_ambiguous(self):
+        """An element whose AABB merely CONTAINS the query point is not
+        a tie: its box distance is 0 but its nearest point is far. The
+        box must be polished, not pruned into a phantom runner_up of
+        0.0 that flags every exact hit near an overlapping box."""
+        mesh = _line_mesh([(0, 0, 0), (1, 0, 0), (0, 0, 1), (1, 1, 0)],
+                          pairs=[(1, 2), (3, 4)])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")   # unit-scale test geometry
+            ev = exfield.Evaluator(mesh.fields["coordinates"],
+                                   dimension=1)
+        loc = exfield.find_location(ev, [0.5, 0.0, 0.0],
+                                    element_ids="all")
+        assert loc.element_id == 1
+        assert loc.residual == pytest.approx(0.0, abs=1e-12)
+        # element 2's box contains the point; its true distance is
+        # ~0.707 and must be reported, not a box-distance 0
+        assert loc.runner_up_residual == pytest.approx(
+            0.7071, abs=1e-3)
+        assert not loc.ambiguous
+
 
 class TestEmbeddedGuards:
     def test_max_residual_is_mandatory(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
         with pytest.raises(ValueError, match="max_residual"):
             exfield.EmbeddedPoints.from_world(ev, [[1.0, 0.0, 0.0]])
+
+    def test_empty_from_world_refused(self, chain_mesh):
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(ValueError, match="at least one point"):
+            exfield.EmbeddedPoints.from_world(ev, [], max_residual=np.inf)
+        with pytest.raises(ValueError, match="at least one point"):
+            exfield.HostedPath.from_world(ev, [], max_residual=np.inf)
+
+    def test_mutation_to_unequal_lengths_caught(self, chain_mesh):
+        """The collections are public lists; a post-construction append
+        must not make arclength return uninitialised memory."""
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        table = exfield.ArclengthTable.build(ev, element_ids=[1, 2])
+        p = exfield.EmbeddedPoints(element_ids=[1, 2],
+                                   xis=[[0.5], [0.5]])
+        p.element_ids.append(3)
+        with pytest.raises(ValueError, match="mutated"):
+            p.arclength(table)
+        with pytest.raises(ValueError, match="mutated"):
+            p.to_world(ev)
 
     def test_max_residual_fires(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
@@ -246,6 +291,19 @@ class TestHostedPath:
         assert path.metadata["residual"] == pytest.approx([0.0, 0.0],
                                                           abs=1e-9)
         assert path.host_group == "aorta"
+
+    def test_from_world_positional_element_ids_respected(self, chain_mesh):
+        """The third positional is element_ids, exactly as on
+        EmbeddedPoints — an override that silently reassigned it to
+        host_group widened the search to the whole mesh."""
+        ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
+        pts = [[0.5, 0.0, 0.0], [4.5, 0.0, 0.0]]
+        base = exfield.EmbeddedPoints.from_world(
+            ev, pts, [1], max_residual=np.inf)
+        path = exfield.HostedPath.from_world(
+            ev, pts, [1], max_residual=np.inf)
+        assert path.element_ids == base.element_ids == [1, 1]
+        assert path.host_group is None       # keyword-only now
 
     def test_host_group_round_trips(self, chain_mesh):
         path = exfield.HostedPath(element_ids=[1], xis=[[0.5]],

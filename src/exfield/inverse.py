@@ -119,7 +119,13 @@ def find_location(evaluator, point, element_ids=None, n_sample=12,
     runner_up = np.inf     # best distance in any element other than best
     pruned_lower = np.inf  # lower bound on distance to first pruned element
     for idx in order:
-        if best is not None and box_d2[idx] >= best[1] ** 2:
+        # Strict > : boxes at EXACTLY the best distance are polished,
+        # not pruned. A pruned box distance is only a lower bound — a
+        # box touching the query point (box distance 0) may hold a far
+        # point, and pruning it would report runner_up_residual 0.0 for
+        # an element that is not actually close. Polishing resolves
+        # both that false tie and the true shared-endpoint tie exactly.
+        if best is not None and box_d2[idx] > best[1] ** 2:
             pruned_lower = float(np.sqrt(box_d2[idx]))
             break
         eid = ids[idx]
@@ -137,10 +143,12 @@ def find_location(evaluator, point, element_ids=None, n_sample=12,
         else:
             runner_up = min(runner_up, dist)
     eid, dist, xi, pinned = best
-    # Every element whose box came nearer than `dist` was polished, so
-    # `runner_up` is exact among those; the first pruned box distance is
-    # a valid lower bound for everything else. Using the minimum keeps
-    # the ambiguity flag conservative (it may flag, never miss).
+    # Every element whose box came within `dist` (inclusive) was
+    # polished, so `runner_up` is exact among those — including exact
+    # ties; the first pruned box distance is strictly greater than
+    # `dist` and a valid lower bound for everything else. Using the
+    # minimum keeps the ambiguity flag conservative (it may flag,
+    # never miss) without ever reporting a phantom zero.
     runner_up = min(runner_up, pruned_lower)
     return Location(element_id=eid, xi=xi, residual=dist,
                     boundary=pinned, runner_up_residual=runner_up)

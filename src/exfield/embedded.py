@@ -76,6 +76,9 @@ class EmbeddedPoints:
         if not isinstance(evaluator, Evaluator):
             evaluator = Evaluator(evaluator)
         points = np.atleast_2d(np.asarray(points, dtype=float))
+        if points.size == 0:
+            raise ValueError(
+                f"{cls.__name__}.from_world needs at least one point")
         if max_residual is None:
             raise ValueError(
                 "from_world requires max_residual: the projection residual "
@@ -101,8 +104,19 @@ class EmbeddedPoints:
         obj.metadata["boundary"] = boundary
         return obj
 
+    def _check_lengths(self):
+        """Re-validate collection lengths — they are public lists, and a
+        post-construction mutation would make zips silently truncate."""
+        n = len(self.element_ids)
+        if len(self.xis) != n or len(self.names) != n:
+            raise ValueError(
+                f"{type(self).__name__} collections were mutated to "
+                f"unequal lengths (element_ids {n}, xis {len(self.xis)}, "
+                f"names {len(self.names)})")
+
     def to_world(self, evaluator):
         """Evaluate the addresses on (possibly refitted) geometry."""
+        self._check_lengths()
         if not isinstance(evaluator, Evaluator):
             evaluator = Evaluator(evaluator)
         self._check_fingerprint(evaluator.model.fingerprint)
@@ -120,7 +134,8 @@ class EmbeddedPoints:
         """
         if not isinstance(table, ArclengthTable):
             raise TypeError("arclength needs an ArclengthTable")
-        values = np.empty(len(self))
+        self._check_lengths()
+        values = np.full(len(self), np.nan)
         nan_count = 0
         chain = set(table.element_ids)
         for i, (eid, xi) in enumerate(zip(self.element_ids, self.xis)):
@@ -184,14 +199,21 @@ class HostedPath(EmbeddedPoints):
         self.host_group = host_group
 
     @classmethod
-    def from_world(cls, evaluator, points, host_group=None, **kwargs):
+    def from_world(cls, evaluator, points, *args, host_group=None,
+                   **kwargs):
         """Project an ordered run of world points onto the host.
 
         Input order is path order — this does not sort, resample or
         otherwise second-guess the caller's sequence. ``max_residual``
         stays mandatory, per :meth:`EmbeddedPoints.from_world`.
+        ``host_group`` is keyword-only: positional arguments pass
+        through to the parent unchanged, so ``from_world(ev, pts,
+        element_ids)`` restricts the search exactly as it does on
+        :class:`EmbeddedPoints` — a signature that silently reassigned
+        the third positional to ``host_group`` widened the search to
+        the whole mesh with no error.
         """
-        obj = super().from_world(evaluator, points, **kwargs)
+        obj = super().from_world(evaluator, points, *args, **kwargs)
         obj.host_group = host_group
         return obj
 

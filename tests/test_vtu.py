@@ -280,6 +280,38 @@ class TestBezierExport:
             counts[scale] = summary["points"]
         assert len(set(counts.values())) == 1, counts
 
+    def test_extra_field_seam_survives_scale(self, vagus_mesh, tmp_path):
+        """The dedup key mixes SCALED geometry with UNSCALED field
+        values; a single shared quantum merged real field seams at
+        large scale and overflowed the int64 key at small scale. Point
+        counts with an attached field must match at every scale."""
+        counts = {}
+        for scale in (1.0, 1e4, 1e-3, 1e-12):
+            summary = exfield.export_vtu(
+                vagus_mesh, str(tmp_path / f"vs_{scale:g}.vtu"),
+                dimension=3, groups=False, scale=scale,
+                extra_fields=["vagus coordinates"])
+            counts[scale] = summary["points"]
+        assert len(set(counts.values())) == 1, counts
+
+    def test_dedup_false_never_merges(self, cube_mesh, tmp_path):
+        """dedup=False must keep every lattice point distinct at any
+        scale — the near-zero quantum used to overflow int64 and merge
+        everything through a NaN-cast sentinel key."""
+        import warnings as _w
+        for scale in (1.0, 1e-9):
+            with _w.catch_warnings():
+                _w.simplefilter("error", RuntimeWarning)
+                summary = exfield.export_vtu(
+                    cube_mesh, str(tmp_path / f"nd_{scale:g}.vtu"),
+                    groups=False, dedup=False, scale=scale)
+            assert summary["points"] == 64, (scale, summary["points"])
+
+    def test_scale_zero_refused(self, cube_mesh, tmp_path):
+        with pytest.raises(ValueError, match="scale=0"):
+            exfield.export_vtu(cube_mesh, str(tmp_path / "z.vtu"),
+                               scale=0.0)
+
     def test_inherited_2d_export(self, vagus_mesh, tmp_path):
         """2-D epineurium (serendipity) plus face-inherited quads."""
         path = str(tmp_path / "vagus2d.vtu")

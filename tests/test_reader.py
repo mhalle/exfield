@@ -23,7 +23,10 @@ class TestCorpus:
     declined with a typed exception — never a silent misread or crash."""
 
     @pytest.mark.parametrize("path", zinc_resource_files() or
-                             [pytest.param(None, marks=pytest.mark.skip)])
+                             [pytest.param(None, marks=pytest.mark.skip(
+                                 reason="zinc resources clone absent at "
+                                        "../zinc — the 59-file corpus "
+                                        "regression is NOT exercised"))])
     def test_parse_or_decline(self, path):
         try:
             mesh = exfield.load(path)
@@ -236,6 +239,20 @@ class TestRedeclaration:
         with pytest.raises(ExSyntaxError, match="redeclared"):
             exfield.loads(_redeclared_field_text(
                 element_coordinate_system="cylindrical polar"))
+
+    def test_omitted_coordinate_system_agrees_with_explicit_rc(self):
+        """The coordinate system is optional in EX and defaults to
+        rectangular cartesian everywhere exfield evaluates — so a
+        header that omits it must not conflict with one stating it
+        (mixed-writer exnode/exelem files do this)."""
+        text = _redeclared_field_text().replace(
+            "coordinates, coordinate, rectangular cartesian, real,"
+            " #Components=1\n x. l.Lagrange",
+            "coordinates, coordinate, real,"
+            " #Components=1\n x. l.Lagrange")
+        mesh = exfield.loads(text)
+        assert (mesh.fields["coordinates"].coordinate_system
+                or "rectangular cartesian") == "rectangular cartesian"
 
     def test_conflicting_component_name_rejected(self):
         with pytest.raises(ExSyntaxError, match="component name"):

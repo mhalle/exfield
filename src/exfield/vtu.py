@@ -191,18 +191,22 @@ class _PointPool:
 
     The dedup key includes any attached point-data values, so coincident
     points carrying *different* field values (seams, discontinuities)
-    are kept separate rather than silently merged.
+    are kept separate rather than silently merged. ``quanta`` is a
+    per-component vector — scaled geometry components and unscaled
+    field components live at different magnitudes and must not share a
+    quantum.
     """
 
-    def __init__(self, quantum):
-        self.quantum = quantum
+    def __init__(self, quanta):
+        self.quanta = np.asarray(quanta, dtype=float)
         self.points = []
         self.data = []           # per point: concatenated extra values
         self._index = {}
 
     def add(self, xyz, extra):
         key_vec = np.concatenate([xyz, extra]) if len(extra) else xyz
-        key = tuple(np.round(key_vec / self.quantum).astype(np.int64))
+        key = tuple(np.round(
+            key_vec / self.quanta[:len(key_vec)]).astype(np.int64))
         idx = self._index.get(key)
         if idx is None:
             idx = len(self.points)
@@ -353,6 +357,9 @@ def export_vtu(mesh, path, field=None, dimension=None, element_ids=None,
     """
     if not isinstance(mesh, Mesh):
         raise TypeError("export_vtu takes an exfield Mesh")
+    if scale == 0:
+        raise ValueError("scale=0 would collapse all geometry to the "
+                         "origin; pass the unit conversion you mean")
     geometry = _resolve_field(mesh, field)
     if dimension is None:
         dimension = mesh.highest_dimension
@@ -367,19 +374,30 @@ def export_vtu(mesh, path, field=None, dimension=None, element_ids=None,
     extra = [(f.name, _quiet_evaluator(f, dimension))
              for f in (_resolve_field(mesh, x) for x in extra_fields)]
 
-    # dedup quantum from a cheap bbox estimate
+    # Per-component dedup quanta from a cheap bbox probe. The dedup key
+    # concatenates SCALED geometry with UNSCALED extra-field values, so
+    # each half needs a quantum in its own units: one shared quantum
+    # either merges real field seams at large scale or overflows the
+    # int64 key at small scale.
     probe = ids[:: max(1, len(ids) // 20)][:20]
     span = 0.0
+    extra_spans = [0.0] * len(extra)
     for eid in probe:
         try:
             x = evaluator.evaluate(eid, np.full(dimension, 0.5))
         except EvaluationError:
             continue
         span = max(span, float(np.abs(x).max()))
-    # quantum must live in the same units as the pooled points, which
-    # are scaled — otherwise scale changes topology, not just units
-    quantum = (span or 1.0) * (abs(scale) or 1.0) * (1e-9 if dedup else 1e-16)
-    pool = _PointPool(quantum)
+        for i, (_name, f_ev) in enumerate(extra):
+            v = f_ev.evaluate(eid, np.full(dimension, 0.5))
+            extra_spans[i] = max(extra_spans[i], float(np.abs(v).max()))
+    rel = 1e-9 if dedup else 1e-16
+    quanta = [np.full(geometry.number_of_components,
+                      (span or 1.0) * abs(scale) * rel)]
+    for (_name, f_ev), s in zip(extra, extra_spans):
+        quanta.append(np.full(f_ev.field.number_of_components,
+                              (s or 1.0) * rel))
+    pool = _PointPool(np.concatenate(quanta))
 
     connectivity = []
     offsets = []

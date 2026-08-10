@@ -59,12 +59,17 @@ class Field:
         return self.cm_type == "coordinate"
 
     def matches_declaration(self, other):
+        # EX's coordinate system is optional and defaults to rectangular
+        # cartesian (coordinates.py applies the same default), so a
+        # header that omits it agrees with one that states it.
+        rc = "rectangular cartesian"
         return (self.name == other.name
                 and self.cm_type == other.cm_type
                 and self.value_type == other.value_type
                 and self.number_of_components == other.number_of_components
                 and self.field_type == other.field_type
-                and self.coordinate_system == other.coordinate_system
+                and (self.coordinate_system or rc)
+                    == (other.coordinate_system or rc)
                 and self.focus == other.focus
                 and self.host_mesh_name == other.host_mesh_name
                 and self.host_mesh_dimension == other.host_mesh_dimension)
