@@ -56,9 +56,21 @@ class Field:
 
     @property
     def is_coordinate(self):
+        """True for ``cm_type == "coordinate"`` fields. Note that a
+        scaffold typically has SEVERAL (geometry plus material/straight
+        variants), so this identifies candidates, not the geometry."""
         return self.cm_type == "coordinate"
 
     def matches_declaration(self, other):
+        """True if two declarations of the same field agree.
+
+        EX allows a field to be declared in several headers (node and
+        element, or across templates); the reader merges them and uses
+        this to refuse conflicting redeclarations rather than silently
+        keeping whichever was seen first. Component names are checked
+        separately by the reader, because they are parsed after the
+        merge.
+        """
         # EX's coordinate system is optional and defaults to rectangular
         # cartesian (coordinates.py applies the same default), so a
         # header that omits it agrees with one that states it.
@@ -91,6 +103,10 @@ class NodeFieldTemplate:
         self._index = {}          # (label, version) -> slot
 
     def set_value_number_of_versions(self, label, versions):
+        """Append a value label with its version count, assigning the
+        parameter slots that follow the labels already registered
+        (EX 2+ stores versions consecutively within a label). Raises
+        ValueError if the label was already declared."""
         for existing, _ in self.labels:
             if existing == label:
                 raise ValueError(f"repeated value label {label}")
@@ -101,6 +117,8 @@ class NodeFieldTemplate:
 
     @property
     def total_values(self):
+        """Length of the parameter vector: all labels' versions summed.
+        This is the count an EX header's ``#Values=`` must match."""
         return sum(v for _, v in self.labels)
 
     def slot(self, label, version=1):
@@ -108,12 +126,15 @@ class NodeFieldTemplate:
         return self._index.get((label, version))
 
     def versions(self, label):
+        """Number of versions stored for ``label``, or 0 if absent."""
         for existing, v in self.labels:
             if existing == label:
                 return v
         return 0
 
     def signature(self):
+        """Hashable ``((label, versions), ...)`` identity, used to reuse
+        one template across nodes that store the same layout."""
         return tuple(self.labels)
 
 
@@ -134,6 +155,14 @@ class Node:
         self.templates = {}    # field name -> list of NodeFieldTemplate
 
     def get_parameter(self, field_name, component, label="value", version=1):
+        """One stored parameter, addressed by field, component, value
+        label and version.
+
+        Raises :class:`~exfield.errors.EvaluationError` when the field
+        is not defined at this node, or when the node's template has no
+        such (label, version) — a missing derivative is an error here,
+        never a silent zero.
+        """
         nfts = self.templates.get(field_name)
         if nfts is None:
             raise EvaluationError(
@@ -147,6 +176,13 @@ class Node:
 
 
 class Nodeset:
+    """A named collection of nodes — "nodes" or "datapoints".
+
+    Supports ``len()``, ``in``, iteration over :class:`Node` objects,
+    and ``nodeset[identifier]`` lookup. Identifiers are the EX file's
+    own and need not be contiguous.
+    """
+
     def __init__(self, name):
         self.name = name       # "nodes" or "datapoints"
         self.nodes = {}        # identifier -> Node
@@ -164,6 +200,8 @@ class Nodeset:
         return identifier in self.nodes
 
     def get_or_create(self, identifier):
+        """The node with this identifier, creating an empty one if it is
+        not present (EX declares a node before its field values)."""
         node = self.nodes.get(identifier)
         if node is None:
             node = Node(identifier)
@@ -185,10 +223,16 @@ class ElementShape:
 
     @property
     def face_count(self):
+        """How many faces the shape has — 2 ends, 4 edges or 6 faces.
+        The count comes from the SHAPE, not from the ``Faces:`` list an
+        element happens to carry: EX may omit absent faces while keeping
+        their slots, so a face's position is meaningful."""
         # line: 2 ends; square: 4 edges; cube: 6 faces
         return 2 * self.dimension if self.dimension >= 1 else 0
 
     def face_shape(self):
+        """Shape of this shape's faces (one dimension down), or None for
+        lines and points, whose faces are nodes rather than elements."""
         if self.dimension <= 1:
             return None
         return ElementShape(self.dimension - 1)
@@ -242,9 +286,16 @@ class ElementFieldTemplate:
         self.functions = [None] * basis.number_of_functions
 
     def set_function_terms(self, fn, terms):
+        """Define basis function ``fn`` (0-based) as a sum of
+        :class:`Term`. An EMPTY list is meaningful and distinct from
+        unset: it is EX's "0." mapping, a function that contributes
+        zero."""
         self.functions[fn] = list(terms)
 
     def validate(self):
+        """Raise ValueError unless every basis function has a mapping.
+        Guards the gap between "maps to zero" (empty list) and "never
+        parsed" (None), which would otherwise evaluate as zero."""
         for fn, terms in enumerate(self.functions):
             if terms is None:
                 raise ValueError(
@@ -253,6 +304,10 @@ class ElementFieldTemplate:
 
 
 class ScaleFactorSet:
+    """One named block of an element's scale factors: how many values
+    it holds and where the block starts in the element's concatenated
+    scale-factor array."""
+
     def __init__(self, name, count, offset, identifiers=None):
         self.name = name
         self.count = count
@@ -274,9 +329,12 @@ class ElementTemplate:
 
     @property
     def total_scale_factors(self):
+        """Total length of the element's concatenated scale-factor
+        array, i.e. every declared set's count summed."""
         return sum(s.count for s in self.scale_factor_sets)
 
     def find_scale_factor_set(self, name):
+        """The declared :class:`ScaleFactorSet` with this name, or None."""
         for s in self.scale_factor_sets:
             if s.name == name:
                 return s
@@ -344,15 +402,24 @@ class Group:
         self.elements = {}    # dimension -> set of element identifiers
 
     def add_node(self, nodeset_name, identifier):
+        """Add a node identifier to this group, within a named nodeset."""
         self.nodes.setdefault(nodeset_name, set()).add(identifier)
 
     def add_element(self, dimension, identifier):
+        """Add an element identifier to this group, at one dimension."""
         self.elements.setdefault(dimension, set()).add(identifier)
 
     def node_ids(self, nodeset_name="nodes"):
+        """Set of node identifiers in this group (empty set if none)."""
         return self.nodes.get(nodeset_name, set())
 
     def element_ids(self, dimension):
+        """Set of element identifiers at ``dimension`` (empty if none).
+
+        A group usually spans dimensions — an annotation group carries
+        3-D elements AND their inherited faces and lines — so the
+        dimension is required, not inferred.
+        """
         return self.elements.get(dimension, set())
 
     def __repr__(self):
@@ -395,25 +462,37 @@ class Mesh:
 
     @property
     def nodes(self):
+        """The "nodes" nodeset, which every EX region has."""
         return self.nodesets["nodes"]
 
     @property
     def datapoints(self):
+        """The "datapoints" nodeset, or **None** when the file has none
+        (unlike :attr:`nodes`, it is optional). Markers commonly live
+        here, but in some scaffolds they are ordinary nodes instead."""
         return self.nodesets.get("datapoints")
 
     def element_mesh(self, dimension):
+        """The :class:`ElementMesh` of one dimension; raises KeyError if
+        the file has no elements of that dimension. See :attr:`mesh1d`,
+        :attr:`mesh2d`, :attr:`mesh3d` for the fixed-dimension form."""
         return self.element_meshes[dimension]
 
     @property
     def mesh1d(self):
+        """1-D element mesh (lines). Usually far larger than you expect:
+        it holds the faces inherited from 2-D and 3-D elements too."""
         return self.element_meshes[1]
 
     @property
     def mesh2d(self):
+        """2-D element mesh (faces), including inherited faces of 3-D
+        elements."""
         return self.element_meshes[2]
 
     @property
     def mesh3d(self):
+        """3-D element mesh (volumes)."""
         return self.element_meshes[3]
 
     def evaluator(self, field=None, dimension=None):
@@ -429,6 +508,8 @@ class Mesh:
 
     @property
     def highest_dimension(self):
+        """Largest dimension that actually holds elements, or 0 for a
+        mesh with none. This is the default an Evaluator picks."""
         dims = [d for d, m in self.element_meshes.items() if len(m)]
         return max(dims) if dims else 0
 
@@ -454,6 +535,8 @@ class Mesh:
             f"{names}. Pick one explicitly via mesh.fields[name].")
 
     def get_or_create_nodeset(self, name):
+        """The named nodeset, creating an empty one if absent (used
+        while reading and when authoring a mesh in code)."""
         ns = self.nodesets.get(name)
         if ns is None:
             ns = Nodeset(name)
@@ -461,6 +544,8 @@ class Mesh:
         return ns
 
     def get_or_create_element_mesh(self, dimension):
+        """The element mesh of this dimension, creating an empty one if
+        absent."""
         m = self.element_meshes.get(dimension)
         if m is None:
             m = ElementMesh(dimension)
@@ -468,6 +553,7 @@ class Mesh:
         return m
 
     def get_or_create_group(self, name):
+        """The named group, creating an empty one if absent."""
         g = self.groups.get(name)
         if g is None:
             g = Group(name)
@@ -475,6 +561,10 @@ class Mesh:
         return g
 
     def summary(self):
+        """Multi-line human-readable overview: EX version, field names,
+        nodeset and per-dimension element counts, groups, and anything
+        in :attr:`skipped`. Intended for a quick "did this read the way
+        I expected?" check after loading."""
         lines = [f"Mesh {self.name!r} (EX version {self.ex_version})"]
         lines.append(f"  fields: {', '.join(self.fields)}")
         for name, ns in self.nodesets.items():

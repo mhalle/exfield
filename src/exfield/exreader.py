@@ -80,23 +80,41 @@ class EXReader:
     # ------------------------------------------------------------ helpers
 
     def error(self, message):
+        """Build (do not raise) an :class:`ExSyntaxError` at the current
+        scanner line. Callers write ``raise self.error(...)``."""
         return self.s.error(message)
 
     def unsupported(self, message):
+        """Build (do not raise) an :class:`UnsupportedExFeature` at the
+        current scanner line. Callers write ``raise self.unsupported(...)``."""
         return UnsupportedExFeature(message, line=self.s.line)
 
     def clearTemplates(self):
+        """Drop all node and element templates and deactivate both.
+
+        Templates are scoped to the current domain, so this is called on
+        every nodeset/mesh switch: a template defined under one !#nodeset
+        or !#mesh is not nameable from another.
+        """
         self.nodeTemplates = []
         self.nodeTemplate = None
         self.elementTemplates = []
         self.elementTemplate = None
 
     def requireModel(self):
+        """Return the Mesh, raising if no ``Region:`` has been read yet."""
         if self.model is None:
             raise self.error("Region: must be set before this construct")
         return self.model
 
     def setNodeset(self, nodeset):
+        """Make ``nodeset`` current and clear the mesh, so element
+        constructs error until a !#mesh directive arrives.
+
+        Templates are cleared. Below EX version 3 there is no ``Define
+        node template``, so a blank template is created *and activated*
+        here for subsequent ``#Fields=`` headers to fill in.
+        """
         self.mesh = None
         self.nodeset = nodeset
         self.clearTemplates()
@@ -106,6 +124,10 @@ class EXReader:
             self.nodeTemplates.append(self.nodeTemplate)
 
     def setMesh(self, element_mesh):
+        """Make ``element_mesh`` current, and *also* switch the current
+        nodeset to the one the mesh declares, creating it if needed —
+        elements name nodes from that nodeset. Templates are cleared.
+        """
         self.mesh = element_mesh
         self.nodeset = self.requireModel().get_or_create_nodeset(
             element_mesh.nodeset_name)
@@ -170,6 +192,8 @@ class EXReader:
             self.setMesh(element_mesh)
 
     def readTimeSequence(self):
+        """'T' consumed: always raises — time sequences are declined by
+        design, so this production never returns."""
         raise self.unsupported(
             "Time sequences are not supported (declined by design)")
 
@@ -368,6 +392,18 @@ class EXReader:
                     "Invalid character in derivative/value versions list")
 
     def readNodeHeaderField(self):
+        """One field of a node header: declaration then one line per
+        component, ``name. #Values=N (labels)``.
+
+        Appends the merged :class:`Field` and its per-component
+        :class:`NodeFieldTemplate` list to ``self.nodeTemplate``, which
+        must already be active. Constant fields carry no ``#Values`` —
+        the component name alone is the whole entry, values arrive later
+        in ``Values:``. The declared ``#Values`` count is checked against
+        the value/version list. Component names are recorded on first
+        declaration and must match on any redeclaration. Returns True to
+        mirror the reference's bool.
+        """
         field = self.readField()
         nfts = []
         for c in range(field.number_of_components):
@@ -408,6 +444,13 @@ class EXReader:
         return True
 
     def readNodeHeader(self):
+        """'#' consumed: ``Fields=N`` then N node field declarations.
+
+        Requires a nodeset and no current mesh. Below EX version 3 a
+        bare header at top level starts a fresh template (all earlier
+        templates are discarded); in version 3+ it fills in the template
+        opened by ``Define node template``, and errors if none is active.
+        """
         if (self.mesh is not None) or (self.nodeset is None):
             raise self.error("Nodeset not set")
         if self.exVersion < 3:
@@ -424,6 +467,8 @@ class EXReader:
             self.readNodeHeaderField()
 
     def findNodeTemplateByName(self, name):
+        """Node template of that name in the current nodeset's scope, or
+        None. Templates from other domains have been cleared away."""
         for nt in self.nodeTemplates:
             if nt.name == name:
                 return nt
@@ -458,6 +503,13 @@ class EXReader:
         self.nodeTemplate = None  # must be separately activated
 
     def readNodeTemplate(self):
+        """``Node template:`` consumed: name (plus ignored key=value
+        trailer) of an already-defined template, which becomes active.
+
+        Activation is the only job — the template was populated by an
+        earlier ``Define node template``, which deliberately left it
+        deactivated. Not permitted inside a group definition.
+        """
         if self.fieldGroup is not None:
             raise self.error("Node template not allowed in group definition")
         name = self.s.read_ex_string(",\n\r\t")
@@ -562,6 +614,12 @@ class EXReader:
                 break
 
     def readNodeGroup(self):
+        """``Node group:`` consumed: compact identifier ranges added to
+        the current group for the current nodeset.
+
+        Membership only — every identifier must already exist in the
+        nodeset, otherwise it is an error; a group never creates nodes.
+        """
         if self.fieldGroup is None:
             raise self.error(
                 "Node group: may only be used within a Group definition")
@@ -653,12 +711,35 @@ class EXReader:
         self.elementTemplate.shape = shape
 
     def readBasis(self):
+        """Read a basis description up to (but not consuming) the next
+        ',' and return the parsed Basis; the caller eats the separator."""
         description = self.s.read_charset("^,").strip()
         if not description:
             raise self.error("Error reading basis description")
         return parse_basis(description, line=self.s.line)
 
     def readElementHeaderField(self):
+        """One field of an element header: declaration then, per
+        component, a basis line and its parameter map.
+
+        Builds an :class:`ElementFieldTemplate` per component into
+        ``self.elementTemplate.efts[(field name, component)]`` and
+        appends the merged Field to ``template.fields``. Requires mesh,
+        nodeset and element template to be set.
+
+        Non-general (constant) fields and ``field based`` components get
+        a synthetic constant-basis EFT with one empty function rather
+        than a parsed map. For ``standard node based`` components the
+        map is read function by function: a local node index expression
+        (``0.`` meaning no terms, ``1.``, ``1+2.``), ``#Values=`` giving
+        how many consecutive basis functions the following labels cover,
+        a ``Value labels:`` line, and — only when the component names a
+        scale factor set — a ``Scale factor indices:`` line. Duplicate
+        fields in one header, out-of-range local node indexes and node
+        counts exceeding ``#Nodes`` are errors; each EFT is validated
+        before the next component. ``element based``/``grid based``
+        mappings and legacy ``Value indices`` are declined.
+        """
         if not (self.mesh is not None and self.nodeset is not None
                 and self.elementTemplate is not None):
             raise self.error("Mesh/nodeset/element template not set")
@@ -956,12 +1037,23 @@ class EXReader:
             self.readElementHeaderField()
 
     def findElementTemplateByName(self, name):
+        """Element template of that name in the current mesh's scope, or
+        None. Templates from other domains have been cleared away."""
         for et in self.elementTemplates:
             if et.name == name:
                 return et
         return None
 
     def readDefineElementTemplate(self):
+        """'D' consumed: the whole ``Define element template:`` block —
+        name, ``Shape.``, ``#Scale factor sets``/``#Nodes``/``#Fields``
+        with its field entries, and an optional trailing ``Values:``.
+
+        The template is created and registered but left *deactivated* on
+        exit (``self.elementTemplate`` is None); a later ``Element
+        template:`` line must name it. Redefining a name is an error,
+        and the block is not allowed inside a group definition.
+        """
         if not (self.s.match_literal("efine element template ")
                 and self.s.match_one_of(":")):
             raise self.error("Truncated Define element template: token")
@@ -989,6 +1081,9 @@ class EXReader:
         self.elementTemplate = None  # must be separately activated
 
     def readElementTemplate(self):
+        """``Element template:`` consumed: name (plus ignored key=value
+        trailer) of an already-defined template, which becomes active.
+        Not permitted inside a group definition."""
         if self.fieldGroup is not None:
             raise self.error(
                 "Element template not allowed in group definition")
@@ -1003,9 +1098,30 @@ class EXReader:
     # ------------------------------------------------------ element data
 
     def readElementIdentifier(self):
+        """One element number. EX version 2+ writes a plain integer, so
+        this is a bare int read; it is also used for face identifiers,
+        where -1 is legal and means an absent face."""
         return self.s.read_int("Error reading element identifier")
 
     def readElement(self):
+        """``Element:`` consumed: identifier then the optional
+        ``Faces:``, ``Nodes:`` and ``Scale factors:`` sections.
+
+        Creates or merges the element in the current mesh and returns
+        it. With no active template it returns immediately after
+        get-or-create — that is how a group lists existing elements
+        without repeating headers.
+
+        The counts are taken from the shape and template, never from
+        counting tokens: ``shape.face_count`` faces, ``template.
+        node_count`` nodes, ``template.total_scale_factors`` reals. A
+        face identifier of -1 is an absent face that still occupies its
+        slot (stored as None); referenced faces and nodes are
+        get-or-created in the (d-1) mesh and the current nodeset
+        respectively, so a file may mention them before defining them.
+        Redefining an element with a different shape dimension is an
+        error, and a template carrying element-based values is declined.
+        """
         if (self.fieldGroup is not None) and (self.exVersion >= 3):
             raise self.error(
                 "Element not allowed in group definition; expecting "
@@ -1095,6 +1211,12 @@ class EXReader:
         return element
 
     def readElementGroup(self):
+        """``Element group:`` consumed: compact identifier ranges added
+        to the current group at the current mesh's dimension.
+
+        Membership only — every identifier must already exist in the
+        mesh, otherwise it is an error; a group never creates elements.
+        """
         if self.fieldGroup is None:
             raise self.error(
                 "Element group: may only be used within a Group definition")
@@ -1136,6 +1258,19 @@ class EXReader:
     # -------------------------------------------------------- region/group
 
     def readRegionOrGroupName(self, first_char):
+        """'R' or 'G' consumed (passed in as ``first_char``): the rest of
+        ``Region: /`` or ``Group name: NAME``.
+
+        ``Region:`` creates the Mesh — it is what makes ``requireModel``
+        succeed — clears any current group and selects the ``nodes``
+        nodeset. Only the root path ``/`` is accepted; a sub-region, or a
+        second ``Region:`` block, is declined as unsupported.
+
+        ``Group name:`` gets or creates the group and makes it current,
+        which switches later Node/Element constructs into membership
+        mode. Below EX version 3 a group may legally precede any
+        ``Region:``, so the model is created implicitly here.
+        """
         s = self.s
         if first_char == "R":
             if not (s.match_literal("egion ") and s.match_one_of(":")):

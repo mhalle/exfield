@@ -39,6 +39,15 @@ class Location:
 
     @property
     def ambiguous(self):
+        """True when another element fits about as well — specifically
+        when ``runner_up_residual <= 2 * residual``.
+
+        Treat it as a refusal to answer, not a warning: on branching
+        structures the runner-up may be the element you actually meant.
+        The comparison is deliberately conservative (it may flag where a
+        human would not) and inclusive, so an exact tie at a shared
+        endpoint — both residuals 0.0 — is reported ambiguous.
+        """
         # <= so an exact tie (both residuals 0.0 at a shared endpoint)
         # is flagged; strict < would report 0 < 0 as unambiguous
         return self.runner_up_residual <= 2.0 * self.residual

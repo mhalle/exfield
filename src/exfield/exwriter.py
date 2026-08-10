@@ -93,6 +93,14 @@ class EXWriter:
     # ------------------------------------------------------------- write
 
     def write(self):
+        """Serialise the whole model and return it as one string.
+
+        Resets the output buffer, so calling it twice is safe. Order is
+        fixed: ``nodes``, then the element meshes by ascending dimension,
+        then ``datapoints``, then the groups. Datapoints come after the
+        meshes because their element:xi fields name host elements, which
+        should already be defined at that point.
+        """
         self.out = []
         self.out.append("EX Version: 3\n")
         self.out.append("Region: /\n")
@@ -107,6 +115,16 @@ class EXWriter:
     # ------------------------------------------------------ field header
 
     def writeFieldHeader(self, fieldIndex, field):
+        """One ``N) name, cm type, ..., #Components=C`` header line,
+        shared by node and element headers.
+
+        ``fieldIndex`` is the 1-based position within this header, not
+        anything stored on the field. Prolate/oblate coordinate systems
+        always emit ``focus=``, defaulting to 1.0 when unset; element:xi
+        fields always emit host mesh and host mesh dimension, falling
+        back to a ``meshNd`` name. The fibre branch is a mirror of the
+        reference's special case and emits the same ``, real`` either way.
+        """
         o = self.out
         o.append(f"{fieldIndex}) {field.name}, {field.cm_type}")
         if field.field_type == "constant":
@@ -132,6 +150,12 @@ class EXWriter:
         o.append("\n")
 
     def writeFieldValues(self, fields):
+        """Trailing ``Values:`` block for the constant fields in
+        ``fields``, one line each, in header order.
+
+        Writes nothing at all — not even the token — when no field in
+        the header is constant with values set.
+        """
         constants = [f for f in fields
                      if f.field_type == "constant" and f.values is not None]
         if not constants:
@@ -158,6 +182,19 @@ class EXWriter:
         return tuple(sig)
 
     def writeNodeset(self, nodeset_name):
+        """``!#nodeset NAME`` directive followed by its nodes, each
+        preceded by its template line when the template changes.
+
+        Emits nothing when the nodeset is missing or empty, with one
+        exception: the model's constant fields are homed on ``nodes``,
+        so if any exist that directive is still written and carries a
+        node template that is defined but never activated — it exists
+        only to hold the ``Values:`` block.
+
+        Per-nodeset template bookkeeping is reset here (templates are
+        not nameable across domains) but the ``nodeN`` numbering stays
+        file-global, mirroring Zinc.
+        """
         nodeset = self.model.nodesets.get(nodeset_name)
         constants = [f for f in self.model.fields.values()
                      if f.field_type == "constant" and f.values is not None]
@@ -187,6 +224,18 @@ class EXWriter:
             self.writeNode(node)
 
     def writeNodeTemplate(self, node):
+        """Ensure the template ``node`` needs is defined and active,
+        emitting nothing if it is already the active one.
+
+        Templates are pooled by value signature rather than by identity,
+        so nodes that happen to agree on fields and value labels share
+        one ``Define node template`` and later occurrences cost only a
+        ``Node template:`` line. Header field order follows the model's
+        field order, not the node's.
+
+        Warns for a general component with no value labels: exfield
+        reads such files back, but Zinc 4.2 crashes on them.
+        """
         signature = self._nodeSignature(node)
         if signature == self.nodeTemplate:
             return
@@ -230,6 +279,14 @@ class EXWriter:
         self.nodeTemplate = signature
 
     def writeNode(self, node):
+        """``Node: id`` and its values, one line per component.
+
+        Assumes the matching template is already active. Only general
+        fields contribute values — constant fields were emitted once in
+        the template's ``Values:`` block. An element:xi component with no
+        host writes ``-1`` followed by integer zeros for the xi slots;
+        a real or integer component with no values writes no line at all.
+        """
         o = self.out
         o.append(f"Node: {node.identifier}\n")
         for field_name, _sig in self._nodeSignature(node):
@@ -266,6 +323,16 @@ class EXWriter:
     # ---------------------------------------------------------- elements
 
     def writeMesh(self, dimension):
+        """``!#mesh`` directive for one dimension followed by its
+        elements, each preceded by its template line when it changes.
+
+        Emits nothing for an empty mesh. ``face mesh=`` is only written
+        above dimension 1. Elements with no template are skipped: those
+        are placeholders created by a face reference or an element:xi
+        host, and belong to whichever mesh actually defines them.
+        Per-mesh template bookkeeping is reset here; the ``elementN``
+        numbering stays file-global.
+        """
         element_mesh = self.model.element_meshes[dimension]
         if len(element_mesh) == 0:
             return
@@ -296,6 +363,15 @@ class EXWriter:
         return len(seen)
 
     def writeElementTemplate(self, template):
+        """Ensure ``template`` is defined and active, emitting nothing if
+        it is already the active one.
+
+        Unlike node templates these are pooled by object identity, not
+        by value: two equal-but-distinct templates are written out
+        twice. First sight also fixes the ``scaling1..N`` names for the
+        template's scale factor sets, which the field components refer
+        to by name.
+        """
         if template is self.elementTemplate:
             return
         entry = self.elementTemplates.get(id(template))
@@ -335,6 +411,22 @@ class EXWriter:
         self.writeFieldValues(template.fields)
 
     def writeElementHeaderFieldComponent(self, template, field, c, sf_names):
+        """One component entry of an element field header: basis line,
+        ``#Nodes``, and the function-by-function parameter map.
+
+        Non-general fields and field-mapped EFTs collapse to a single
+        line with no map. Otherwise ``#Nodes`` is the count of *distinct*
+        local nodes the EFT actually references, which can be below the
+        template's node count.
+
+        Consecutive functions are merged into one ``#Values=`` run when
+        they share both an identical term local-node list and the same
+        basis node — the run never spans basis nodes, mirroring Zinc's
+        grouping. A function with no terms writes local node ``0`` and
+        the label ``zero``. The ``Scale factor indices:`` line is emitted
+        only when the EFT names a scale factor set, with indices
+        converted back to the file's 1-based numbering (0 = no scaling).
+        """
         o = self.out
         componentName = field.component_names[c]
         if field.field_type != "general":
@@ -397,6 +489,16 @@ class EXWriter:
             fn += run
 
     def writeElement(self, element):
+        """``Element: id`` and its ``Faces:``, ``Nodes:`` and ``Scale
+        factors:`` sections.
+
+        Assumes the element's template is already active. Each section
+        is written only if the template or shape calls for it, since the
+        reader takes its counts from there rather than from the line.
+        Absent faces and nodes are written as -1. An element whose
+        template has scale factor sets but no stored values gets a full
+        run of zeros rather than a missing section; five reals per line.
+        """
         o = self.out
         o.append(f"Element: {element.identifier}\n")
         template = element.template
@@ -427,6 +529,15 @@ class EXWriter:
     # ------------------------------------------------------------ groups
 
     def writeGroup(self, group):
+        """``Group name:`` and the group's members as compact identifier
+        ranges, nodes first then elements by ascending dimension.
+
+        Each block re-emits the ``!#nodeset``/``!#mesh`` directive it
+        applies to, because the group section comes after all the domain
+        content and the reader's current domain has moved on. Empty
+        per-domain sets are skipped. A dimension with no element mesh in
+        the model still writes a synthesised ``meshNd`` name.
+        """
         o = self.out
         o.append(f"Group name: {group.name}\n")
         for nodeset_name in ("nodes", "datapoints"):

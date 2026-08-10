@@ -114,6 +114,13 @@ class Evaluator:
     # ------------------------------------------------------------ params
 
     def element(self, element_id, dimension=None):
+        """The :class:`~exfield.mesh.Element` object for an id, on this
+        evaluator's dimension unless another is given.
+
+        Raises :class:`~exfield.errors.EvaluationError` if no such
+        element exists there. Evaluation itself takes ids directly —
+        this is for reaching an element's shape, faces or template.
+        """
         dimension = dimension if dimension is not None else self.dimension
         mesh = self.model.element_meshes.get(dimension)
         if mesh is None or element_id not in mesh:
