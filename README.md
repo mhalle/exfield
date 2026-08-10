@@ -38,6 +38,13 @@ points = exfield.EmbeddedPoints.from_world(
     ev, [x], element_ids=trunk, max_residual=50.0)
 arcs = points.arclength(table)                      # .values, .nan_count
 
+path = exfield.HostedPath(                          # ordered proxy path
+    element_ids=[1155, 1156], xis=[[0.2], [0.8]],   # anchored in host
+    host_group="orientation anterior",              # material coords
+    fingerprint=mesh.fingerprint)
+xyz = path.to_world(ev)                             # derived, never fitted
+cum = path.world_arclengths(ev)                     # polyline, from 0.0
+
 exfield.dump(mesh, "rewritten.exf")                # EX Version 3
 
 exfield.export_vtu(mesh, "vagus.vtu", scale=1e-3,  # µm -> mm
@@ -175,6 +182,14 @@ under-converged quadrature none raise on their own. So:
 * **`EmbeddedPoints.from_world` requires `max_residual`** (pass
   `np.inf` to opt out) and `arclength()` returns the NaN count next to
   the values, because `nanmean` drops off-chain points silently.
+* **`HostedPath` claims polyline semantics only.** An ordered chain of
+  material addresses in a host scaffold (proxy structures — lymph
+  chains — whose world geometry is *derived* by evaluating the host,
+  never fitted). Interpolation between consecutive addresses is
+  undefined across elements: resolution *is* the number of addresses,
+  and `world_arclengths` is a lower bound that changes when addresses
+  are added. Empty paths are refused; the fingerprint guard fires on
+  every evaluation.
 * **`table.arclength_at(...)` / `arclength_at_parameter(...)`
   interpolate the cumulative table.** `s * total` is not arclength:
   element lengths within one scaffold vary by over 2x.
@@ -205,7 +220,7 @@ under-converged quadrature none raise on their own. So:
 | `evaluate.py` | `Evaluator`, `ArclengthTable`, `integrate` (length/area/volume via Gram-determinant Jacobian) |
 | `coordinates.py` | explicit conversions to rectangular cartesian (formulas from `general/geometry.cpp`); `Evaluator` warns on non-cartesian fields rather than silently converting |
 | `inverse.py` | `find_location` / `closest_point` (Gauss-Newton, seeded) |
-| `embedded.py` | `EmbeddedPoints` |
+| `embedded.py` | `EmbeddedPoints`, `HostedPath` (ordered material-address paths for hosted proxies) |
 | `bezier.py` | exact Hermite→Bezier change of basis (evaluation/display only) |
 | `fingerprint.py` | template identity convention |
 
