@@ -72,8 +72,8 @@ class TestBatchAPI:
                            atol=1e-9)
 
     def test_mesh_conveniences(self, vagus_mesh):
-        assert vagus_mesh.mesh1d is vagus_mesh.mesh(1)
-        assert vagus_mesh.mesh3d is vagus_mesh.mesh(3)
+        assert vagus_mesh.mesh1d is vagus_mesh.element_mesh(1)
+        assert vagus_mesh.mesh3d is vagus_mesh.element_mesh(3)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ev = vagus_mesh.evaluator()          # default: coordinates
@@ -87,7 +87,7 @@ class TestBatchAPI:
             vagus_mesh.groups["orientation anterior"].element_ids(1))
         table = exfield.ArclengthTable.build(ev, element_ids=trunk)
         emb = exfield.EmbeddedPoints(element_ids=[trunk[0]], xis=[[0.5]])
-        result = emb.arclength(table)
+        result = emb.chain_arclengths(table)
         values, nan_count = result           # tuple unpacking still works
         assert result.nan_count == 0         # and attribute access
         assert result.values[0] > 0

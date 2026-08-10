@@ -142,7 +142,7 @@ class TestInverseGuards:
         loc = exfield.find_location(ev, [7.0, 0.0, 0.0])
         assert loc.element_id == 3
         assert loc.xi[0] == pytest.approx(1.0)
-        assert loc.boundary          # explicit indicator, not just residual
+        assert loc.at_boundary          # explicit indicator, not just residual
         assert loc.residual == pytest.approx(2.0)
 
     def test_exact_tie_at_shared_endpoint_is_ambiguous(self, chain_mesh):
@@ -205,7 +205,7 @@ class TestEmbeddedGuards:
                                    xis=[[0.5], [0.5]])
         p.element_ids.append(3)
         with pytest.raises(ValueError, match="mutated"):
-            p.arclength(table)
+            p.chain_arclengths(table)
         with pytest.raises(ValueError, match="mutated"):
             p.to_world(ev)
 
@@ -229,7 +229,7 @@ class TestEmbeddedGuards:
         table = exfield.ArclengthTable.build(ev, element_ids=[1, 2])
         emb = exfield.EmbeddedPoints(
             element_ids=[1, 3], xis=[[0.5], [0.5]])
-        values, nan_count = emb.arclength(table)
+        values, nan_count = emb.chain_arclengths(table)
         assert nan_count == 1              # element 3 is off the chain
         assert np.isnan(values[1])
         assert values[0] == pytest.approx(0.5)
@@ -247,18 +247,18 @@ class TestHostedPath:
         xyz = path.to_world(ev)
         assert xyz[:, 0] == pytest.approx([5.0, 0.0, 4.0])
 
-    def test_world_arclengths_match_known_geometry(self, chain_mesh):
+    def test_polyline_arclengths_match_known_geometry(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
         path = exfield.HostedPath(element_ids=[1, 1, 2],
                                   xis=[[0.0], [1.0], [1.0]])
-        s = path.world_arclengths(ev)
+        s = path.polyline_arclengths(ev)
         assert s == pytest.approx([0.0, 1.0, 4.0])
         assert np.all(np.diff(s) >= 0.0)
 
     def test_single_address_arclength_is_zero(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)
         path = exfield.HostedPath(element_ids=[2], xis=[[0.5]])
-        assert path.world_arclengths(ev) == pytest.approx([0.0])
+        assert path.polyline_arclengths(ev) == pytest.approx([0.0])
 
     def test_empty_path_refused(self):
         with pytest.raises(ValueError, match="at least one address"):
@@ -279,7 +279,7 @@ class TestHostedPath:
         with pytest.raises(exfield.FingerprintMismatch):
             path.to_world(ev)
         with pytest.raises(exfield.FingerprintMismatch):
-            path.world_arclengths(ev)
+            path.polyline_arclengths(ev)
 
     def test_from_world_returns_hosted_path_with_residuals(self, chain_mesh):
         ev = exfield.Evaluator(chain_mesh.fields["coordinates"], dimension=1)

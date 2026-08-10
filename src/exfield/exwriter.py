@@ -457,12 +457,12 @@ class EXWriter:
             _IdentifierRanges(ids).write(o)
 
 
-def dumps(model):
+def dumps(mesh):
     """Serialise a Mesh to EX Version 3 text."""
-    return EXWriter(model).write()
+    return EXWriter(mesh).write()
 
 
-def dump(model, path):
+def dump(mesh, path):
     """Write a Mesh to an EX/EXF file."""
     with open(path, "w", encoding="utf8") as fh:
-        fh.write(dumps(model))
+        fh.write(dumps(mesh))

@@ -37,13 +37,13 @@ from .exreader import EXReader, loads
 from .exwriter import EXWriter, dump, dumps
 from .vtu import export_markers_vtu, export_vtu
 from .fingerprint import check_fingerprints, eft_signature, make_fingerprint
-from .inverse import Location, closest_point, find_location
+from .inverse import Location, find_location, find_locations
 from .mesh import (Element, ElementFieldTemplate, ElementShape,
                    ElementTemplate, Field, Group, Mesh, Node,
                    NodeFieldTemplate, Nodeset, ScaleFactorSet, Term,
                    VALUE_LABELS)
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "load", "loads", "dump", "dumps",
@@ -54,7 +54,7 @@ __all__ = [
     "EXReader", "EXWriter",
     "Evaluator", "ArclengthTable", "build_chain", "integrate",
     "to_rectangular_cartesian",
-    "Location", "find_location", "closest_point",
+    "Location", "find_location", "find_locations",
     "EmbeddedPoints", "ArclengthValues", "HostedPath",
     "TensorProductBasis", "parse_basis",
     "hermite_to_bezier_1d", "hermite_to_bezier_matrix",

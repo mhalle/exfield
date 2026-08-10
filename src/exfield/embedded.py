@@ -88,7 +88,7 @@ class EmbeddedPoints:
         locations = [find_location(evaluator, p, element_ids=element_ids,
                                    **kwargs) for p in points]
         residuals = np.array([loc.residual for loc in locations])
-        boundary = np.array([loc.boundary for loc in locations])
+        boundary = np.array([loc.at_boundary for loc in locations])
         bad = residuals > max_residual
         if np.any(bad):
             worst = float(residuals.max())
@@ -101,7 +101,7 @@ class EmbeddedPoints:
                   [loc.xi for loc in locations], names=names,
                   fingerprint=evaluator.model.fingerprint)
         obj.metadata["residual"] = residuals
-        obj.metadata["boundary"] = boundary
+        obj.metadata["at_boundary"] = boundary
         return obj
 
     def _check_lengths(self):
@@ -123,7 +123,7 @@ class EmbeddedPoints:
         return np.array([evaluator.evaluate(eid, xi)
                          for eid, xi in zip(self.element_ids, self.xis)])
 
-    def arclength(self, table):
+    def chain_arclengths(self, table):
         """Arclength along a chain for each point.
 
         Points whose element is not on the chain correctly return NaN (a
@@ -217,7 +217,7 @@ class HostedPath(EmbeddedPoints):
         obj.host_group = host_group
         return obj
 
-    def world_arclengths(self, evaluator):
+    def polyline_arclengths(self, evaluator):
         """Cumulative polyline arclength at each address, starting 0.0.
 
         This is the length of the *polyline through the addresses*, not

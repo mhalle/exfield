@@ -11,7 +11,7 @@ Hazards this API is shaped around (EXFIELD_GOTCHAS.md §3):
   points; it is not an optimisation.
 * xi is clipped, so a point beyond the end of a chain projects to the
   endpoint and returns a plausible-looking address with a large
-  residual. The result carries an explicit ``boundary`` flag.
+  residual. The result carries an explicit ``at_boundary`` flag.
 * Newton with multi-candidate seeding can still find a local minimum;
   the result exposes ``runner_up_residual`` so ambiguity is visible.
 """
@@ -29,7 +29,7 @@ class Location:
     element_id: int
     xi: np.ndarray
     residual: float          # distance from point to mapped location
-    boundary: bool           # True if xi is pinned to the element boundary
+    at_boundary: bool         # True if xi is pinned to the element boundary
                              # with the minimum outside — the point
                              # projects past the mesh edge
     runner_up_residual: float  # best residual found in any *other*
@@ -151,10 +151,10 @@ def find_location(evaluator, point, element_ids=None, n_sample=12,
     # never miss) without ever reporting a phantom zero.
     runner_up = min(runner_up, pruned_lower)
     return Location(element_id=eid, xi=xi, residual=dist,
-                    boundary=pinned, runner_up_residual=runner_up)
+                    at_boundary=pinned, runner_up_residual=runner_up)
 
 
-def closest_point(evaluator, points, element_ids=None, **kwargs):
+def find_locations(evaluator, points, element_ids=None, **kwargs):
     """Vector version of :func:`find_location`: list of Locations.
 
     Each query runs branch-and-bound over cached per-element bounding
@@ -185,7 +185,7 @@ def _gauss_newton_multi(evaluator, element_id, point, seeds, tol,
     pinned = np.zeros(k, dtype=bool)
     eye = 1e-12 * np.eye(dim)
     for _ in range(max_iterations):
-        x, J = evaluator.evaluate_with_derivatives(element_id, xis)
+        x, J = evaluator.value_and_jacobian(element_id, xis)
         r = x - point
         g = np.einsum("kdc,kc->kd", J, r)
         H = J @ np.swapaxes(J, 1, 2) + eye

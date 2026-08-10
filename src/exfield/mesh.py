@@ -401,7 +401,7 @@ class Mesh:
     def datapoints(self):
         return self.nodesets.get("datapoints")
 
-    def mesh(self, dimension):
+    def element_mesh(self, dimension):
         return self.element_meshes[dimension]
 
     @property

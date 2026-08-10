@@ -24,7 +24,7 @@ def _compare_evaluation(m1, m2, field_name, dimension, samples=20):
         e1 = exfield.Evaluator(m1.fields[field_name], dimension=dimension)
         e2 = exfield.Evaluator(m2.fields[field_name], dimension=dimension)
     rng = np.random.default_rng(7)
-    ids = sorted(m1.mesh(dimension).elements)
+    ids = sorted(m1.element_mesh(dimension).elements)
     for _ in range(samples):
         eid = ids[rng.integers(len(ids))]
         xi = rng.random(dimension)
@@ -40,8 +40,8 @@ class TestRoundtrip:
     def test_cube(self, cube_mesh):
         m2 = _roundtrip(cube_mesh)
         assert len(m2.nodes) == len(cube_mesh.nodes)
-        assert len(m2.mesh(3)) == len(cube_mesh.mesh(3))
-        assert m2.mesh(3)[1].faces == cube_mesh.mesh(3)[1].faces
+        assert len(m2.element_mesh(3)) == len(cube_mesh.element_mesh(3))
+        assert m2.element_mesh(3)[1].faces == cube_mesh.element_mesh(3)[1].faces
         _compare_evaluation(cube_mesh, m2, "notcoordinates", 3)
 
     def test_write_is_byte_stable(self, cube_mesh):
@@ -52,7 +52,7 @@ class TestRoundtrip:
         m2 = _roundtrip(vagus_mesh)
         assert len(m2.nodes) == len(vagus_mesh.nodes)
         for d in (1, 2, 3):
-            assert len(m2.mesh(d)) == len(vagus_mesh.mesh(d))
+            assert len(m2.element_mesh(d)) == len(vagus_mesh.element_mesh(d))
         assert set(m2.groups) == set(vagus_mesh.groups)
         for g in vagus_mesh.groups:
             for d in (1, 2, 3):

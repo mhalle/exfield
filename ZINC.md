@@ -74,8 +74,8 @@ consume with exfield. Files round-trip both ways (see Part 2).
 | `fm.findFieldByName(n)` | `mesh.fields[n]` |
 | `Fieldcache` + `setMeshLocation` | arguments to `evaluate(element_id, xi)` |
 | `field.evaluateReal(cache, n)` | `ev.evaluate(element_id, xi)` |
-| `fm.createFieldDerivative(f, d)` | `ev.evaluate_derivatives(...)` / `evaluate_with_derivatives(...)` |
-| `fm.findMeshByDimension(d)` | `mesh.mesh1d` / `mesh2d` / `mesh3d`, or `mesh.mesh(d)` |
+| `fm.createFieldDerivative(f, d)` | `ev.evaluate_derivatives(...)`; `ev.value_and_jacobian(...)` returns values and derivatives in one pass |
+| `fm.findMeshByDimension(d)` | `mesh.mesh1d` / `mesh2d` / `mesh3d`, or `mesh.element_mesh(d)` |
 | `mesh.findElementByIdentifier(i)` | element ids are used directly |
 | `fm.findNodesetByName("nodes")` | `mesh.nodes`, `mesh.datapoints` (`None` if the file has none) |
 | `field.castGroup()` + `getMeshGroup` | `mesh.groups[name].element_ids(dim)` |
@@ -135,7 +135,7 @@ res, dx = d1.evaluateReal(cache, 3)
 
 # exfield
 dx = ev.evaluate_derivatives(1155, [0.37])
-x, J = ev.evaluate_with_derivatives(1155, xis)   # fused, batched
+x, J = ev.value_and_jacobian(1155, xis)          # both, in one pass
 ```
 
 ### Groups
@@ -181,14 +181,14 @@ element, xi = find.evaluateMeshLocation(cache, 3)
 # exfield
 loc = exfield.find_location(ev, target, element_ids=trunk)
 loc.element_id, loc.xi, loc.residual
-loc.boundary      # xi pinned at the element edge (projected past the end)
+loc.at_boundary   # xi pinned at the element edge (projected past the end)
 loc.ambiguous     # another element fits nearly/exactly as well
 ```
 
 exfield's version answers the same question but **refuses ambiguous
 framings**: on a branching 1-D mesh it requires `element_ids` (a branch
 running alongside the trunk is frequently nearer than the trunk), and
-it reports `boundary` and `runner_up_residual` so a plausible-looking
+it reports `at_boundary` and `runner_up_residual` so a plausible-looking
 wrong answer is visible. Pass `element_ids="all"` to insist.
 
 ### Markers / embedded locations
@@ -335,7 +335,7 @@ as porting errors:
   samples and pads by ~1%. Zinc remains ~8× faster (compiled, warm
   start); exfield's version cannot prune away the true nearest element.
 * **Ambiguity is surfaced, not resolved.** `find_location` reports
-  `boundary`, `runner_up_residual` and `ambiguous`, and *refuses*
+  `at_boundary`, `runner_up_residual` and `ambiguous`, and *refuses*
   nearest-point queries on branching 1-D meshes without an explicit
   element subset.
 * **Output is EX Version 3 only**, though both v2 and v3 are read (v3

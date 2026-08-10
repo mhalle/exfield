@@ -7,7 +7,7 @@ uv sync
 Read, evaluate and write OpenCMISS-Zinc **EX/EXF finite element
 scaffolds** with **NumPy as the only runtime dependency**.
 
-**Status: alpha (0.4.x).** The library is golden-validated against
+**Status: alpha (0.5.x).** The library is golden-validated against
 Zinc 4.2.1 and battle-tested by the map-core pilots, but the API and
 any interchange conventions may still change between 0.x releases.
 Known gap stated up front: fingerprints are not serialized through
@@ -68,14 +68,14 @@ area = exfield.integrate(                           # length/area/volume
 loc = exfield.find_location(ev, x, element_ids=trunk)
 points = exfield.EmbeddedPoints.from_world(
     ev, [x], element_ids=trunk, max_residual=50.0)
-arcs = points.arclength(table)                      # .values, .nan_count
+arcs = points.chain_arclengths(table)               # .values, .nan_count
 
 path = exfield.HostedPath(                          # ordered proxy path
     element_ids=[1155, 1156], xis=[[0.2], [0.8]],   # anchored in host
     host_group="orientation anterior",              # material coords
     fingerprint=mesh.fingerprint)
 xyz = path.to_world(ev)                             # derived, never fitted
-cum = path.world_arclengths(ev)                     # polyline, from 0.0
+cum = path.polyline_arclengths(ev)                  # from 0.0
 
 exfield.dump(mesh, "rewritten.exf")                # EX Version 3
 
@@ -219,7 +219,7 @@ under-converged quadrature none raise on their own. So:
   chains — whose world geometry is *derived* by evaluating the host,
   never fitted). Interpolation between consecutive addresses is
   undefined across elements: resolution *is* the number of addresses,
-  and `world_arclengths` is a lower bound that changes when addresses
+  and `polyline_arclengths` is a lower bound that changes when addresses
   are added. Empty paths are refused. The fingerprint guard runs on
   every evaluation but only *bites* when fingerprints are present —
   EX files carry none, so a loaded mesh has `fingerprint = None` and
@@ -255,7 +255,7 @@ under-converged quadrature none raise on their own. So:
 | `mesh.py` | data model: `Mesh`, fields, nodesets, element meshes, groups |
 | `evaluate.py` | `Evaluator`, `ArclengthTable`, `integrate` (length/area/volume via Gram-determinant Jacobian) |
 | `coordinates.py` | explicit conversions to rectangular cartesian (formulas from `general/geometry.cpp`); `Evaluator` warns on non-cartesian fields rather than silently converting |
-| `inverse.py` | `find_location` / `closest_point` (Gauss-Newton, seeded) |
+| `inverse.py` | `find_location` / `find_locations` (Gauss-Newton, seeded) |
 | `embedded.py` | `EmbeddedPoints`, `HostedPath` (ordered material-address paths for hosted proxies) |
 | `bezier.py` | exact Hermite→Bezier change of basis (evaluation/display only) |
 | `fingerprint.py` | template identity convention |
@@ -265,7 +265,7 @@ divergence reviewable); the public API is plain Python/NumPy — batch
 `evaluate`, `mesh.mesh1d/2d/3d`, `mesh.evaluator(...)`, named result
 tuples — and does not reproduce Zinc's object model.
 
-`closest_point` has no spatial index — O(elements × samples ×
+`find_locations` has no spatial index — O(elements × samples ×
 candidates) with Newton inside. Fine for a centreline; measure before
 projecting thousands of points onto 3-D scaffolds.
 

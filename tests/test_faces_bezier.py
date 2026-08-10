@@ -43,7 +43,7 @@ class TestFaceMaps:
                                     dimension=2)
             ev3 = exfield.Evaluator(vagus_mesh.fields["coordinates"],
                                     dimension=3)
-        parent = next(e for e in vagus_mesh.mesh(3).elements.values()
+        parent = next(e for e in vagus_mesh.element_mesh(3).elements.values()
                       if e.faces and e.faces[0] is not None)
         fid = parent.faces[0]     # xi1=0 face
         v_face = ev2.evaluate(fid, [0.3, 0.7])

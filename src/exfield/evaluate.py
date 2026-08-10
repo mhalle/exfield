@@ -59,7 +59,7 @@ class Evaluator:
             if dimension == 0:
                 raise EvaluationError("Mesh has no elements")
         self.dimension = dimension
-        self.element_mesh = self.model.mesh(dimension)
+        self.element_mesh = self.model.element_mesh(dimension)
         self.nodeset = self.model.nodesets[self.element_mesh.nodeset_name]
         self._param_cache = {}
         self._resolve_cache = {}
@@ -260,6 +260,10 @@ class Evaluator:
             xis = xis @ A.T + b
         return dimension, eid, A, xis, single
 
+    # The three evaluation entry points differ only in what they
+    # RETURN — values, derivatives, or both fused. All three take one
+    # xi or a batch; none of them is "the batch one".
+
     def evaluate(self, element_id, xi):
         """Field value(s) at (element, xi).
 
@@ -298,15 +302,14 @@ class Evaluator:
             derivs = np.einsum("kj,nkc->njc", A, derivs)
         return derivs[0] if single else derivs
 
-    def evaluate_many(self, element_id, xis):
-        """Alias for batch :meth:`evaluate` (kept for compatibility)."""
-        return self.evaluate(element_id, np.atleast_2d(
-            np.asarray(xis, dtype=float)))
+    def value_and_jacobian(self, element_id, xi):
+        """Values and their xi-derivatives together, in one pass.
 
-    def evaluate_with_derivatives(self, element_id, xi):
-        """Values and derivatives together (one resolve, shared monomial
-        work — the fast path for Newton-type loops). Single point ->
-        ``(x (c,), J (d, c))``; batch -> ``(x (n, c), J (n, d, c))``."""
+        Same inputs as :meth:`evaluate`; returns the pair the other two
+        methods return separately, sharing one element resolve and one
+        monomial evaluation — the fast path for Newton-type loops.
+        Single point -> ``(x (c,), J (d, c))``; batch ``(n, dimension)``
+        xi -> ``(x (n, c), J (n, d, c))``."""
         dimension, eid, A, xis, single = self._prepare_xi(element_id, xi)
         P, basis = self.element_parameters(eid, dimension)
         n = xis.shape[0]
@@ -314,7 +317,7 @@ class Evaluator:
             x = np.broadcast_to(P[0], (n, P.shape[1])).copy()
             J = np.zeros((n, self.dimension, P.shape[1]))
             return (x[0], J[0]) if single else (x, J)
-        phi, dphi = basis.evaluate_with_derivatives(xis)
+        phi, dphi = basis.values_and_derivatives(xis)
         x = phi @ P
         J = dphi @ P
         if A is not None:

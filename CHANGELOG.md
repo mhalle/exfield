@@ -4,6 +4,34 @@ exfield is **alpha**: the API and any interchange conventions may
 change between 0.x releases. Entries below correspond to the working
 rounds recorded in the map-core project log.
 
+## 0.5.0 — 2026-08-10
+
+**Breaking: API naming pass.** Names that had accreted across build
+rounds were reworked as one coherent set. Done now, deliberately,
+while the library is alpha and every consumer is in-repo — all three
+pilots needed **zero** changes (none of them called a renamed API),
+and no deprecation aliases are shipped: this is a clean break
+documented by the table below.
+
+| old | new | why |
+|---|---|---|
+| `Evaluator.evaluate_with_derivatives` | `Evaluator.value_and_jacobian` | says what it *returns* (both), instead of differing from `evaluate_derivatives` by the word "with"; follows the `value_and_grad` idiom |
+| `Evaluator.evaluate_many` | *deleted* | was an alias for batch `evaluate`; its existence implied `evaluate` was single-point-only, which is false — **all** evaluation methods take one xi or a batch |
+| `TensorProductBasis.evaluate_with_derivatives` | `.values_and_derivatives` | basis functions have values and derivatives, not a Jacobian |
+| `Mesh.mesh(dimension)` | `Mesh.element_mesh(dimension)` | `mesh.mesh(3)` was opaque; now matches the `mesh.element_meshes` dict it reads from |
+| `closest_point(...)` | `find_locations(...)` | it returns a list of `Location`, not points; plural pairs with `find_location` |
+| `Location.boundary` | `Location.at_boundary` | it is a bool; reads as an adjective now, like `ambiguous` |
+| `EmbeddedPoints.metadata["boundary"]` | `metadata["at_boundary"]` | key follows the attribute |
+| `EmbeddedPoints.arclength(table)` | `.chain_arclengths(table)` | plural (returns an array) and says *which* measure: position along a chain |
+| `HostedPath.world_arclengths(ev)` | `.polyline_arclengths(ev)` | the method's central caveat — it measures the polyline through the addresses, not a curve — now lives in the name |
+| `dump(model, path)`, `dumps(model)` | `dump(mesh, ...)`, `dumps(mesh)` | every other public function calls it `mesh` |
+
+Unchanged and worth stating, since they were the source of the
+confusion: `evaluate`, `evaluate_derivatives` and `value_and_jacobian`
+differ **only in what they return** — values, derivatives, or both in
+one pass. Every one of them accepts a single xi or an `(n, dimension)`
+batch.
+
 ## 0.4.0 — 2026-08-10
 
 First release packaged as a standalone unit (Apache-2.0 + NOTICE;

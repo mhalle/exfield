@@ -189,7 +189,7 @@ class _MonomialBasis:
         out = self._cached("dphi", None, xis, compute)
         return out[0] if single else out
 
-    def evaluate_with_derivatives(self, xi):
+    def values_and_derivatives(self, xi):
         """Values and all first derivatives in one pass, sharing the
         per-dimension power tables (used by Newton loops where xi
         changes every iteration and memoization cannot help).

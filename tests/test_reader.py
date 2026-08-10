@@ -43,7 +43,7 @@ class TestFormatSemantics:
 
     def test_zero_means_no_terms(self, cube_mesh):
         # slot 4 of tricubic Hermite node 1 is d2/ds1ds2, declared 'zero'
-        element = cube_mesh.mesh(3)[1]
+        element = cube_mesh.element_mesh(3)[1]
         eft = element.template.efts[("notcoordinates", 0)]
         assert eft.functions[3] == []          # no terms, not value 0.0
         assert [t.label for t in eft.functions[4]] == ["d/ds3"]
@@ -62,7 +62,7 @@ class TestFormatSemantics:
             "#Scale factor sets=0\n#Nodes=0\n#Fields=0\n"
             "Element: 1\n Faces:\n 1 -1 2 3\n")
         mesh = exfield.loads(text)
-        faces = mesh.mesh(2)[1].faces
+        faces = mesh.element_mesh(2)[1].faces
         assert faces == [1, None, 2, 3]        # -1 occupies its slot
 
     def test_face_count_comes_from_shape(self):
@@ -104,9 +104,9 @@ class TestVagusScaffold:
         m = vagus_mesh
         assert m.skipped == []
         assert len(m.nodes) == 97
-        assert len(m.mesh(3)) == 88
-        assert len(m.mesh(2)) == 831
-        assert len(m.mesh(1)) == 1808
+        assert len(m.element_mesh(3)) == 88
+        assert len(m.element_mesh(2)) == 831
+        assert len(m.element_mesh(1)) == 1808
         assert len(m.groups) == 55
         assert set(m.coordinate_field_names) >= {
             "coordinates", "straight coordinates", "vagus coordinates"}
@@ -123,7 +123,7 @@ class TestVagusScaffold:
         assert any("jugular" in name or "nodose" in name for name in names)
         node = markers[0]
         element_id, xi = node.fields["marker_location"][0]
-        assert element_id in vagus_mesh.mesh(3)
+        assert element_id in vagus_mesh.element_mesh(3)
         assert xi.shape == (3,)
 
 
