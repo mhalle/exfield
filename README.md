@@ -188,8 +188,12 @@ under-converged quadrature none raise on their own. So:
   never fitted). Interpolation between consecutive addresses is
   undefined across elements: resolution *is* the number of addresses,
   and `world_arclengths` is a lower bound that changes when addresses
-  are added. Empty paths are refused; the fingerprint guard fires on
-  every evaluation.
+  are added. Empty paths are refused. The fingerprint guard runs on
+  every evaluation but only *bites* when fingerprints are present —
+  EX files carry none, so a loaded mesh has `fingerprint = None` and
+  two `None`s pass without checking. Protection requires stamping
+  fingerprints in code (as `stitch3.build_mesh` does); serializing
+  them through `.exf` is an open gap.
 * **`table.arclength_at(...)` / `arclength_at_parameter(...)`
   interpolate the cumulative table.** `s * total` is not arclength:
   element lengths within one scaffold vary by over 2x.
