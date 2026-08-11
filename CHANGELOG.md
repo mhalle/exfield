@@ -4,6 +4,31 @@ exfield is **alpha**: the API and any interchange conventions may
 change between 0.x releases. Entries below correspond to the working
 rounds recorded in the map-core project log.
 
+## 0.5.1 — 2026-08-11
+
+Fixed
+- `export_vtu`: the point pool copies incoming coordinates instead of
+  aliasing them. The tessellation path passes a row view of a whole
+  element lattice, so the pool held references into the caller's array
+  — exposing pooled points to later mutation and keeping every element
+  lattice alive for the length of the export, including rows dedup had
+  discarded.
+
+Tests
+- A vtk-free check that every lattice slot of a tricubic hex holds the
+  control point the ordering specifies. The ordering itself was pinned
+  against VTK's tables, and the readback tests pinned the file VTK
+  reads — but those skip without the `vtk` extra, so mis-wiring the
+  writer's *use* of the ordering left a green default run.
+- A lone-hex readback oracle: in the two-hex block every cell has a
+  pooled shared face, which can mask an ordering that is
+  self-consistent across that face rather than correct per cell.
+
+Repo
+- `ruff check` is clean across `src/` **and** `tests/` (an unused
+  import had survived since the initial commit because only `src/` was
+  being linted).
+
 ## 0.5.0 — 2026-08-10
 
 **Breaking: API naming pass.** Names that had accreted across build

@@ -272,7 +272,8 @@ projecting thousands of points onto 3-D scaffolds.
 ## Tests
 
 ```bash
-uv run pytest
+uv run pytest        # tests
+uv run ruff check    # lint (src + tests)
 ```
 
 The 42-scaffold corpus sweep runs when a cache directory is present
