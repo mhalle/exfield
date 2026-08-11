@@ -106,7 +106,7 @@ class TestFormat:
 class TestZeroValueGuard:
     def test_warns_on_empty_node_field_template(self):
         """Zinc segfaults on '#Values=0 ()' general node fields; the
-        writer must warn (found via the atlas-proto compiler)."""
+        writer must warn (found via the vagus-proto compiler)."""
         import warnings as w
         import numpy as np
         from exfield.mesh import Field, Mesh, NodeFieldTemplate
