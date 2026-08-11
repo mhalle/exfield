@@ -211,8 +211,13 @@ class _PointPool:
         if idx is None:
             idx = len(self.points)
             self._index[key] = idx
-            self.points.append(np.asarray(xyz, dtype=float))
-            self.data.append(np.asarray(extra, dtype=float))
+            # Copy, don't alias: the tessellation caller passes a row
+            # view of a whole-element lattice, so keeping the view would
+            # both expose us to later mutation of the caller's array and
+            # pin every element lattice — including the rows dedup threw
+            # away — alive for the length of the export.
+            self.points.append(np.array(xyz, dtype=float))
+            self.data.append(np.array(extra, dtype=float))
         return idx
 
 

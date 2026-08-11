@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 import exfield
-from exfield.vtu import point_index_from_ijk
+from exfield.vtu import _control_lattice, point_index_from_ijk
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
 
@@ -97,6 +97,14 @@ def tricubic_block_exf(n_elements=2):
 def tricubic_block(tmp_path_factory):
     path = tmp_path_factory.mktemp("block") / "tricubic_block.exf"
     path.write_text(tricubic_block_exf(2))
+    return exfield.load(str(path))
+
+
+@pytest.fixture(scope="module")
+def tricubic_single(tmp_path_factory):
+    """One isolated curved tricubic hex — no shared faces, no pooling."""
+    path = tmp_path_factory.mktemp("hex") / "tricubic_single.exf"
+    path.write_text(tricubic_block_exf(1))
     return exfield.load(str(path))
 
 
@@ -227,6 +235,45 @@ class TestBezierExport:
         # 2 x 64 lattice points, the 4x4 shared face pooled once
         assert summary["points"] == 2 * 64 - 16
         assert _file_version(path) >= (2, 1)
+
+    def test_tricubic_control_points_land_in_ordered_slots(self,
+                                                           tricubic_block,
+                                                           tmp_path):
+        """Every lattice slot of a tricubic hex holds the control point
+        the ordering says it should — including the xi3 edges at xi2=max
+        (VTK edges 10 and 11), which only exist when two cubic axes meet.
+
+        This is the *pure* counterpart to the TestAgainstVTK readback
+        tests. ``test_matches_vtk_dumped_tables`` pins
+        :func:`point_index_from_ijk` in isolation and the readback tests
+        pin the file VTK actually reads, but vtk is not a dependency, so
+        those skip on a default checkout. Without this test, mis-wiring
+        the writer's use of the ordering — as opposed to the ordering
+        itself — leaves a green ``pytest`` run.
+        """
+        path = str(tmp_path / "slots.vtu")
+        exfield.export_vtu(tricubic_block, path, dimension=3, groups=False)
+        _piece, arrays = _parse_vtu(path)
+        points = arrays[("Points", "Points")]
+        conn = arrays[("Cells", "connectivity")]
+        offsets = arrays[("Cells", "offsets")]
+        element_ids = arrays[("CellData", "element_id")]
+        degrees = arrays[("CellData", "HigherOrderDegrees")]
+        # the m -> ijk decomposition below is written out for a 4x4x4
+        # lattice rather than re-derived, so pin the degrees first
+        assert [list(d) for d in degrees] == [[3, 3, 3]] * 2
+        ev = tricubic_block.evaluator("coordinates", dimension=3)
+        start = 0
+        for c, eid in enumerate(element_ids):
+            cell = points[conn[start:offsets[c]]]
+            start = offsets[c]
+            ctrl, orders = _control_lattice(ev, int(eid))
+            assert len(cell) == 64
+            for m in range(64):
+                ijk = (m % 4, (m // 4) % 4, m // 16)
+                slot = point_index_from_ijk(ijk, tuple(orders))
+                assert np.allclose(cell[slot], ctrl[m], atol=1e-12), \
+                    (eid, ijk, slot)
 
     def test_control_points_shared_between_cells(self, exported):
         _mesh, _path, summary = exported
@@ -416,6 +463,35 @@ class TestMarkers:
 # ------------------------------------------------- live VTK oracle
 
 
+def _readback_residual(vtk, mesh, path, seed, samples=40):
+    """Export ``mesh``, read it back through VTK, and return the worst
+    relative disagreement between VTK's cell interpolation and ours."""
+    exfield.export_vtu(mesh, path, dimension=3, groups=False)
+    reader = vtk.vtkXMLUnstructuredGridReader()
+    reader.SetFileName(path)
+    reader.Update()
+    grid = reader.GetOutput()
+    assert grid.GetNumberOfCells() == len(mesh.mesh3d)
+    ev = mesh.evaluator("coordinates", dimension=3)
+    element_ids = grid.GetCellData().GetArray("element_id")
+    rng = np.random.default_rng(seed)
+    worst = 0.0
+    for c in range(grid.GetNumberOfCells()):
+        cell = grid.GetCell(c)
+        assert cell.GetNumberOfPoints() == 64
+        eid = int(element_ids.GetTuple1(c))
+        for _ in range(samples):
+            xi = rng.random(3)
+            x = [0.0, 0.0, 0.0]
+            weights = [0.0] * cell.GetNumberOfPoints()
+            cell.EvaluateLocation(vtk.reference(0), list(xi), x, weights)
+            ours = ev.evaluate(eid, xi)
+            scale = max(1.0, float(np.abs(ours).max()))
+            worst = max(worst,
+                        float(np.abs(np.array(x) - ours).max()) / scale)
+    return worst
+
+
 class TestAgainstVTK:
     """Needs the vtk package: uv run --with vtk pytest tests/test_vtu.py"""
 
@@ -489,28 +565,22 @@ class TestAgainstVTK:
         xi3 edges on the xi2=max face came back exchanged and this
         residual was ~0.1 in a unit-sized geometry.
         """
-        path = str(tmp_path / "tricubic_roundtrip.vtu")
-        exfield.export_vtu(tricubic_block, path, dimension=3, groups=False)
-        reader = vtk.vtkXMLUnstructuredGridReader()
-        reader.SetFileName(path)
-        reader.Update()
-        grid = reader.GetOutput()
-        assert grid.GetNumberOfCells() == len(tricubic_block.mesh3d)
-        ev = tricubic_block.evaluator("coordinates", dimension=3)
-        element_ids = grid.GetCellData().GetArray("element_id")
-        rng = np.random.default_rng(11)
-        worst = 0.0
-        for c in range(grid.GetNumberOfCells()):
-            cell = grid.GetCell(c)
-            assert cell.GetNumberOfPoints() == 64
-            eid = int(element_ids.GetTuple1(c))
-            for _ in range(40):
-                xi = rng.random(3)
-                x = [0.0, 0.0, 0.0]
-                weights = [0.0] * cell.GetNumberOfPoints()
-                cell.EvaluateLocation(vtk.reference(0), list(xi), x, weights)
-                ours = ev.evaluate(eid, xi)
-                scale = max(1.0, float(np.abs(ours).max()))
-                worst = max(worst,
-                            float(np.abs(np.array(x) - ours).max()) / scale)
+        worst = _readback_residual(vtk, tricubic_block,
+                                   str(tmp_path / "tricubic_roundtrip.vtu"),
+                                   seed=11)
+        assert worst < 1e-9, worst
+
+    def test_single_tricubic_hex_readback(self, vtk, tricubic_single,
+                                          tmp_path):
+        """The same regression on one isolated hex, which is how the
+        edge swap was originally reproduced.
+
+        ``test_tricubic_readback_and_evaluate`` pins a two-hex block, so
+        every cell there has a pooled shared face. Pinning a lone cell
+        keeps the reproducer honest: the ordering must be right per
+        cell, not merely self-consistent across a shared face.
+        """
+        worst = _readback_residual(vtk, tricubic_single,
+                                   str(tmp_path / "single_roundtrip.vtu"),
+                                   seed=5)
         assert worst < 1e-9, worst
