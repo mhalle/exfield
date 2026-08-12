@@ -675,3 +675,125 @@ class TestNonThreeComponentGeometry:
         mesh = exfield.loads(_planar_exf(4))
         with pytest.raises(ValueError, match="3 components"):
             exfield.export_vtu(mesh, str(tmp_path / "four.vtu"))
+
+
+# ------------------------------------------- partially-defined extra field
+#
+# EX templates vary element to element, so a field can be defined on
+# some elements of a dimension and not others. VTK point data is one
+# array over the whole grid and has no representation for that, and the
+# export used to discover it mid-write: the first uncovered element
+# aborted with a bare "not defined on element N" from the resolver.
+
+_PARTIAL_EXF = """EX Version: 3
+Region: /
+!#nodeset nodes
+Define node template: node1
+Shape. Dimension=0
+#Fields=2
+1) coordinates, coordinate, rectangular cartesian, real, #Components=3
+ x.  #Values=1 (value)
+ y.  #Values=1 (value)
+ z.  #Values=1 (value)
+2) thickness, field, rectangular cartesian, real, #Components=1
+ 1.  #Values=1 (value)
+Node template: node1
+Node: 1
+ 1.0 0.0 0.0
+ 1.0
+Node: 2
+ 2.0 0.0 0.0
+ 2.0
+Node: 3
+ 3.0 0.0 0.0
+ 3.0
+!#mesh mesh1d, dimension=1, nodeset=nodes
+Define element template: withextra
+Shape. Dimension=1, line
+#Scale factor sets=0
+#Nodes=2
+#Fields=2
+1) coordinates, coordinate, rectangular cartesian, real, #Components=3
+ x. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+ y. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+ z. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+2) thickness, field, rectangular cartesian, real, #Components=1
+ 1. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+Define element template: geoonly
+Shape. Dimension=1, line
+#Scale factor sets=0
+#Nodes=2
+#Fields=1
+1) coordinates, coordinate, rectangular cartesian, real, #Components=3
+ x. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+ y. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+ z. l.Lagrange, no modify, standard node based.
+  #Nodes=2
+  1. #Values=1
+   Value labels: value
+  2. #Values=1
+   Value labels: value
+Element template: withextra
+Element: 1
+ Nodes:
+ 1 2
+Element template: geoonly
+Element: 2
+ Nodes:
+ 2 3
+"""
+
+
+class TestPartiallyDefinedExtraField:
+    @pytest.mark.parametrize("kwargs", [{}, {"tessellate": 2}],
+                             ids=["bezier", "tessellated"])
+    def test_names_the_field_and_the_element(self, tmp_path, kwargs):
+        mesh = exfield.loads(_PARTIAL_EXF)
+        with pytest.raises(ValueError) as excinfo:
+            exfield.export_vtu(mesh, str(tmp_path / "partial.vtu"),
+                               extra_fields=["thickness"], **kwargs)
+        message = str(excinfo.value)
+        assert "thickness" in message and "2" in message
+        assert "element_ids" in message      # says how to proceed
+
+    @pytest.mark.parametrize("kwargs", [{}, {"tessellate": 2}],
+                             ids=["bezier", "tessellated"])
+    def test_restricting_element_ids_succeeds(self, tmp_path, kwargs):
+        mesh = exfield.loads(_PARTIAL_EXF)
+        path = str(tmp_path / "covered.vtu")
+        info = exfield.export_vtu(mesh, path, element_ids=[1],
+                                  extra_fields=["thickness"], **kwargs)
+        _piece, arrays = _parse_vtu(path)
+        values = arrays[("PointData", "thickness")]
+        assert info["cells"] >= 1
+        assert values.min() >= 1.0 and values.max() <= 2.0

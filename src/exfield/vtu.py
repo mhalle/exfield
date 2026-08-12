@@ -154,11 +154,8 @@ def _control_lattice(evaluator, element_id):
     n = [o + 1 for o in orders]
     d = A.shape[1]
     child_orders = []
-    col_axis = []
     for c in range(d):
-        a = int(np.argmax(A[:, c]))
-        col_axis.append(a)
-        child_orders.append(orders[a])
+        child_orders.append(orders[int(np.argmax(A[:, c]))])
     child_n = [o + 1 for o in child_orders]
     total = int(np.prod(child_n))
     out = np.empty((total, ctrl.shape[1]))
@@ -410,6 +407,33 @@ def export_vtu(mesh, path, field=None, dimension=None, element_ids=None,
     extra = [(f.name, _quiet_evaluator(f, dimension))
              for f in (_resolve_field(mesh, x) for x in extra_fields)]
 
+    # An extra field must cover every element being exported. VTK point
+    # data is one array over the whole grid, so a field defined on only
+    # some elements (ordinary in EX — templates differ element to
+    # element) has no representation. Check up front: otherwise the
+    # first uncovered element aborts the export mid-write with a bare
+    # "not defined on element N" from the resolver, after the caller has
+    # already paid for everything before it. Resolves are cached, so the
+    # main loop pays nothing for this pass.
+    for name, f_ev in extra:
+        missing = []
+        for eid in ids:
+            try:
+                f_ev._resolve(eid)
+            except EvaluationError:
+                missing.append(eid)
+                if len(missing) > 3:
+                    break
+        if missing:
+            shown = ", ".join(str(e) for e in missing[:3])
+            more = "" if len(missing) <= 3 else ", ..."
+            raise ValueError(
+                f"extra field {name!r} is not defined on element(s) "
+                f"{shown}{more} of mesh{dimension}d, which are being "
+                f"exported. VTK point data must cover every cell: pass "
+                f"element_ids= restricted to where the field is defined, "
+                f"or drop it from extra_fields.")
+
     # Per-component dedup quanta from a cheap bbox probe. The dedup key
     # concatenates SCALED geometry with UNSCALED extra-field values, so
     # each half needs a quantum in its own units: one shared quantum
@@ -495,20 +519,19 @@ def export_vtu(mesh, path, field=None, dimension=None, element_ids=None,
             else:
                 res = list(tessellate)
             axes = [np.linspace(0.0, 1.0, r + 1) for r in res]
-            nn_ = [r + 1 for r in res]
-            total = int(np.prod(nn_))
+            nn = [r + 1 for r in res]
+            total = int(np.prod(nn))
             # lattice with xi1 fastest: m = i + nn0*(j + nn1*k)
             lattice = np.empty((total, dimension))
             for m in range(total):
                 rem = m
                 for axis_index in range(dimension):
                     lattice[m, axis_index] = axes[axis_index][
-                        rem % nn_[axis_index]]
-                    rem //= nn_[axis_index]
+                        rem % nn[axis_index]]
+                    rem //= nn[axis_index]
             xyz = evaluator.evaluate(eid, lattice) * scale
             extra_values = [f_ev.evaluate(eid, lattice)
                             for _name, f_ev in extra]
-            nn = [r + 1 for r in res]
             point_ids = np.empty(len(lattice), dtype=np.int64)
             for m in range(len(lattice)):
                 extras = (np.concatenate([v[m] for v in extra_values])

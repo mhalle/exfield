@@ -33,6 +33,19 @@ full range, not weak testing.
   overran it and surfaced as a bare `IndexError` instead of the typed
   message. The check now runs before assembly.
 
+Smaller fixes in the same pass:
+
+* `export_vtu` aborted mid-write when an `extra_fields` entry was
+  defined on only some elements — ordinary in EX, where templates vary
+  element to element — surfacing the resolver's bare "not defined on
+  element N". VTK point data is one array over the whole grid and has
+  no representation for partial coverage, so this is now checked up
+  front and refused with a message naming the field, the uncovered
+  elements, and the way forward (`element_ids=`).
+* `exreader.load` is gone. It shadowed `exfield.load` while silently
+  dropping gzip support; nothing imported it.
+* Dropped a stray `uv sync` code fence sitting above the README title.
+
 Also: seven public docstrings cited `EXFIELD_GOTCHAS.md` and
 `EXFIELD_PORTING_SPEC.md`, which stayed behind in map-core when exfield
 was extracted — `help(exfield.Mesh)` sent readers to files that do not

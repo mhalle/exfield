@@ -1387,11 +1387,11 @@ class EXReader:
 
 
 def loads(text):
-    """Read EX content from a string, returning a Mesh."""
+    """Read EX content from a string, returning a Mesh.
+
+    Reading a *file* is :func:`exfield.load`, which also accepts gzip.
+    This module deliberately has no ``load`` of its own: one that opened
+    the path directly would shadow the package-level name while silently
+    dropping gzip support.
+    """
     return EXReader(text).read()
-
-
-def load(path):
-    """Read an EX/EXF file, returning a Mesh."""
-    with open(path, encoding="utf8") as fh:
-        return loads(fh.read())
