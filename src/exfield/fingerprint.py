@@ -2,10 +2,10 @@
 
 ``(element, xi)`` names the same anatomy only across models built from
 the same scaffold type AND the same discretisation options. Measured on
-'3D Heart 1' (EXFIELD_PORTING_SPEC.md §8): geometry parameters moved a
-fixed (element, xi) up to 0.17 in world space but preserved anatomical
-labels on all 392 elements; changing just two discretisation options
-silently destroyed correspondence for 64% of elements.
+'3D Heart 1': geometry parameters moved a fixed (element, xi) up to 0.17
+in world space but preserved anatomical labels on all 392 elements;
+changing just two discretisation options silently destroyed
+correspondence for 64% of elements.
 
 Nothing in the EX format records which options generated a mesh, so this
 is a convention, not an algorithm: write a fingerprint into every mesh

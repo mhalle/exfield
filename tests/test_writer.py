@@ -125,3 +125,66 @@ class TestZeroValueGuard:
         with w.catch_warnings():
             w.simplefilter("error")
             exfield.dumps(mesh)
+
+
+class TestLocalNodeIndexing:
+    """``#Nodes`` per component must be the highest local node index the
+    EFT references, not the count of distinct ones.
+
+    exfield resolves ``Term.local_node`` straight into the element's
+    ``Nodes:`` list, so an EFT using a NON-PREFIX subset (local nodes 3
+    and 4 of four) round-tripped to a file its own reader rejected.
+    Nothing in the vagus corpus reaches this: every EFT there uses a
+    contiguous prefix, which makes the two counts coincide.
+    """
+
+    NON_PREFIX_EXF = """EX Version: 3
+Region: /
+!#nodeset nodes
+Define node template: node1
+Shape. Dimension=0
+#Fields=1
+1) coordinates, coordinate, rectangular cartesian, real, #Components=1
+ x.  #Values=1 (value)
+Node template: node1
+Node: 1
+ 0.0
+Node: 2
+ 1.0
+Node: 3
+ 2.0
+Node: 4
+ 3.0
+!#mesh mesh1d, dimension=1, nodeset=nodes
+Define element template: element1
+Shape. Dimension=1, line
+#Scale factor sets=0
+#Nodes=4
+#Fields=1
+1) coordinates, coordinate, rectangular cartesian, real, #Components=1
+ x. l.Lagrange, no modify, standard node based.
+  #Nodes=4
+  3. #Values=1
+   Value labels: value
+  4. #Values=1
+   Value labels: value
+Element template: element1
+Element: 1
+ Nodes:
+ 1 2 3 4
+"""
+
+    def test_non_prefix_node_subset_round_trips(self):
+        mesh = exfield.loads(self.NON_PREFIX_EXF)
+        again = _roundtrip(mesh)          # used to raise "Too many nodes"
+        for source in (mesh, again):
+            ev = exfield.Evaluator(source.fields["coordinates"], dimension=1)
+            assert ev.evaluate(1, [0.0])[0] == pytest.approx(2.0)
+            assert ev.evaluate(1, [1.0])[0] == pytest.approx(3.0)
+
+    def test_writes_highest_index_not_distinct_count(self):
+        mesh = exfield.loads(self.NON_PREFIX_EXF)
+        text = exfield.dumps(mesh)
+        # the map references local node 4, so #Nodes must be >= 4
+        assert "  #Nodes=4\n" in text
+        assert "  #Nodes=2\n" not in text

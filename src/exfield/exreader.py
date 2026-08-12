@@ -14,7 +14,7 @@ unversioned), multiple regions, time sequences, simplex and polygon
 shapes, element-based (grid) field values, indexed fields.
 
 Format semantics that are not in the documentation (from the reference
-implementation — see EXFIELD_PORTING_SPEC.md §5):
+implementation; summarised in README.md's Tests section):
 
 1. ``zero`` in a value-label list means the function has *no terms*, not
    a term whose value is zero.

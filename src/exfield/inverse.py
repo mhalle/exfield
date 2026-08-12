@@ -3,7 +3,8 @@
 Gauss-Newton iteration on the squared distance, seeded from a sample
 grid, with xi clipped to [0, 1]^d.
 
-Hazards this API is shaped around (EXFIELD_GOTCHAS.md §3):
+Hazards this API is shaped around (see README.md, "The API is shaped
+around silent-wrong-geometry hazards"):
 
 * On branching structures, "nearest point on the mesh" is the wrong
   question — a branch running alongside the trunk is frequently nearer

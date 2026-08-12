@@ -4,6 +4,40 @@ exfield is **alpha**: the API and any interchange conventions may
 change between 0.x releases. Entries below correspond to the working
 rounds recorded in the map-core project log.
 
+## Unreleased
+
+**Three bugs found by review, all in inputs the corpus never reaches.**
+Every test fixture is 3-component, and every EFT in the vagus scaffold
+references a contiguous prefix of its element's nodes with one basis per
+field — so the suite passed 127/127 with all three live. The shape of
+the gap was a corpus of one scaffold family standing in for the format's
+full range, not weak testing.
+
+* **`export_vtu` silently corrupted non-3-component geometry.** A `.vtu`
+  `Points` array is always 3-component; a 2-D scaffold's 2-component
+  coordinates were written into it unchanged, so VTK read consecutive
+  (x, y) pairs as (x, y, z) triples — a third of the points gone, the
+  rest rotated onto wrong axes, no error raised. Missing components are
+  now padded with zeros, and more than three is refused.
+* **The writer emitted a per-component `#Nodes` its own reader
+  rejected.** It wrote the count of *distinct* local nodes an EFT
+  references, but `Term.local_node` indexes the element's `Nodes:` list
+  directly, so an EFT using a non-prefix subset (local nodes 3 and 4 of
+  four) round-tripped to `#Nodes=2` beside labels for node 4 and failed
+  re-reading with "Too many nodes referenced". Now the highest index
+  referenced. Output for the vagus and cube scaffolds is byte-identical,
+  so the Zinc golden validation is unaffected.
+* **The mixed-basis guard was unreachable in the failing direction.** It
+  ran after the dof matrix was filled, and that matrix is sized from
+  component 0's basis — so a later component with *more* functions
+  overran it and surfaced as a bare `IndexError` instead of the typed
+  message. The check now runs before assembly.
+
+Also: seven public docstrings cited `EXFIELD_GOTCHAS.md` and
+`EXFIELD_PORTING_SPEC.md`, which stayed behind in map-core when exfield
+was extracted — `help(exfield.Mesh)` sent readers to files that do not
+exist. Retargeted to README sections, with a test that pins it.
+
 ## 0.5.1 — 2026-08-11
 
 Fixed

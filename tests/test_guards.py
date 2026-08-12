@@ -336,3 +336,100 @@ class TestFingerprintGuards:
         chain_mesh.fingerprint = exfield.make_fingerprint("t", "1", {"o": 2})
         with pytest.raises(exfield.FingerprintMismatch):
             emb.to_world(ev)
+
+
+class TestMixedBasisGuard:
+    """Components of one field must share a basis. The check has to run
+    BEFORE parameters are assembled: the dof matrix is sized from
+    component 0's basis, so a later component with MORE functions used
+    to overrun it and surface as a bare IndexError instead of the
+    typed message — the failing direction the guard exists for."""
+
+    @staticmethod
+    def _mixed_exf(first="l.Lagrange", second="q.Lagrange"):
+        def component(name, basis, n):
+            return (f" {name}. {basis}, no modify, standard node based.\n"
+                    f"  #Nodes={n}\n"
+                    + "".join(f"  {i}. #Values=1\n   Value labels: value\n"
+                              for i in range(1, n + 1)).rstrip("\n"))
+
+        n1 = 2 if first.startswith("l") else 3
+        n2 = 2 if second.startswith("l") else 3
+        declaration = ("1) coordinates, coordinate, rectangular cartesian, "
+                       "real, #Components=2")
+        return f"""EX Version: 3
+Region: /
+!#nodeset nodes
+Define node template: node1
+Shape. Dimension=0
+#Fields=1
+{declaration}
+ x.  #Values=1 (value)
+ y.  #Values=1 (value)
+Node template: node1
+Node: 1
+ 0.0
+ 0.0
+Node: 2
+ 1.0
+ 2.0
+Node: 3
+ 2.0
+ 5.0
+!#mesh mesh1d, dimension=1, nodeset=nodes
+Define element template: element1
+Shape. Dimension=1, line
+#Scale factor sets=0
+#Nodes=3
+#Fields=1
+{declaration}
+{component("x", first, n1)}
+{component("y", second, n2)}
+Element template: element1
+Element: 1
+ Nodes:
+ 1 2 3
+"""
+
+    def test_later_component_with_more_functions(self):
+        """x linear, y quadratic — the direction that used to IndexError."""
+        mesh = exfield.loads(self._mixed_exf("l.Lagrange", "q.Lagrange"))
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(exfield.EvaluationError, match="different bases"):
+            ev.evaluate(1, [0.5])
+
+    def test_later_component_with_fewer_functions(self):
+        """x quadratic, y linear — the direction that already worked."""
+        mesh = exfield.loads(self._mixed_exf("q.Lagrange", "l.Lagrange"))
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        with pytest.raises(exfield.EvaluationError, match="different bases"):
+            ev.evaluate(1, [0.5])
+
+    def test_matching_bases_still_evaluate(self):
+        mesh = exfield.loads(self._mixed_exf("l.Lagrange", "l.Lagrange"))
+        ev = exfield.Evaluator(mesh.fields["coordinates"], dimension=1)
+        assert ev.evaluate(1, [0.0]) == pytest.approx([0.0, 0.0])
+        assert ev.evaluate(1, [1.0]) == pytest.approx([1.0, 2.0])
+
+
+class TestDocstringReferences:
+    """Docstrings that cite a companion file must cite one that exists.
+
+    Seven public docstrings pointed at EXFIELD_GOTCHAS.md and
+    EXFIELD_PORTING_SPEC.md, which stayed behind in map-core when
+    exfield was extracted — so help(exfield.Mesh) sent readers to
+    nothing. Cheap to re-break, so pin it."""
+
+    def test_no_docstring_cites_a_missing_markdown_file(self):
+        import pathlib
+        import re
+        root = pathlib.Path(exfield.__file__).resolve().parent.parent.parent
+        dangling = []
+        for path in sorted((root / "src" / "exfield").glob("*.py")):
+            for n, line in enumerate(
+                    path.read_text().splitlines(), start=1):
+                for name in re.findall(r"\b([A-Za-z0-9_./-]+\.md)\b", line):
+                    if not (root / name).exists():
+                        dangling.append(f"{path.name}:{n} -> {name}")
+        assert not dangling, "docstrings cite missing files: " + "; ".join(
+            dangling)

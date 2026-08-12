@@ -246,6 +246,37 @@ def _data_array(name, array, n_components=1):
             f"{_b64(array)}\n</DataArray>\n")
 
 
+def _points_array(points):
+    """Geometry as the (n, 3) array VTK's ``Points`` requires.
+
+    That array is *always* 3-component. exfield coordinate fields are
+    not — a 2-D scaffold carries 2-component coordinates — and writing
+    those straight into a ``NumberOfComponents="3"`` array does not
+    fail: VTK reads consecutive (x, y) pairs as (x, y, z) triples, so
+    the point count silently drops by a third and every coordinate
+    lands on the wrong axis. Pad the missing components with zeros (the
+    convention VTK consumers expect for planar data) and refuse more
+    than three, which the format cannot represent at all.
+    """
+    array = np.asarray(points, dtype=np.float64)
+    if array.size == 0:
+        return np.zeros((0, 3))
+    if array.ndim != 2:
+        raise ValueError(
+            f"points must be (n, n_components), got shape {array.shape}")
+    n_comp = array.shape[1]
+    if n_comp > 3:
+        raise ValueError(
+            f"Cannot write a {n_comp}-component field as VTK geometry: a "
+            f".vtu Points array holds exactly 3 components. Export a "
+            f"coordinate field with 3 components or fewer.")
+    if n_comp == 3:
+        return array
+    padded = np.zeros((len(array), 3))
+    padded[:, :n_comp] = array
+    return padded
+
+
 # VTU file-format version and higher-order point ordering.
 #
 # A .vtu declaring version <= 2.0 is read as using the OLD higher-order
@@ -267,6 +298,7 @@ def _write_vtu(path, points, connectivity, offsets, types, cell_data,
                point_data, degrees):
     version = (_VTU_VERSION_HIGHER_ORDER if degrees is not None
                else _VTU_VERSION_LINEAR)
+    points = _points_array(points)
     out = []
     out.append(f'<VTKFile type="UnstructuredGrid" version="{version}" '
                'byte_order="LittleEndian" header_type="UInt64" '
@@ -275,8 +307,7 @@ def _write_vtu(path, points, connectivity, offsets, types, cell_data,
     out.append(f'<Piece NumberOfPoints="{len(points)}" '
                f'NumberOfCells="{len(types)}">\n')
     out.append("<Points>\n")
-    out.append(_data_array("Points", np.asarray(points, dtype=np.float64),
-                           n_components=3))
+    out.append(_data_array("Points", points, n_components=3))
     out.append("</Points>\n")
     out.append("<Cells>\n")
     out.append(_data_array("connectivity",

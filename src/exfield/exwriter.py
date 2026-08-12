@@ -355,12 +355,24 @@ class EXWriter:
             self.writeElementTemplate(element.template)
             self.writeElement(element)
 
-    def _eftDistinctNodeCount(self, eft):
-        seen = set()
-        for terms in eft.functions:
-            for term in terms:
-                seen.add(term.local_node)
-        return len(seen)
+    def _eftLocalNodeCount(self, eft):
+        """The ``#Nodes`` count for one EFT: the HIGHEST local node index
+        it references, not the number of distinct ones.
+
+        exfield resolves ``Term.local_node`` as a 1-based index straight
+        into the element's ``Nodes:`` list (see
+        ``Evaluator.element_parameters``), which is also what the reader
+        range-checks it against. Writing the distinct count instead made
+        any EFT referencing a non-prefix subset unwritable-then-readable:
+        an EFT using local nodes 3 and 4 of four got ``#Nodes=2`` beside
+        labels for node ``4``, and re-reading failed with "Too many nodes
+        referenced". (Zinc can write the distinct count because its EFTs
+        carry their own local node list; exfield collapses that into the
+        element's, so the two counts are not interchangeable here.)
+        """
+        return max((term.local_node
+                    for terms in eft.functions if terms
+                    for term in terms), default=0)
 
     def writeElementTemplate(self, template):
         """Ensure ``template`` is defined and active, emitting nothing if
@@ -415,9 +427,9 @@ class EXWriter:
         ``#Nodes``, and the function-by-function parameter map.
 
         Non-general fields and field-mapped EFTs collapse to a single
-        line with no map. Otherwise ``#Nodes`` is the count of *distinct*
-        local nodes the EFT actually references, which can be below the
-        template's node count.
+        line with no map. Otherwise ``#Nodes`` is the highest local node
+        index the EFT references (see :meth:`_eftLocalNodeCount`), which
+        can be below the template's node count.
 
         Consecutive functions are merged into one ``#Values=`` run when
         they share both an identical term local-node list and the same
@@ -442,7 +454,7 @@ class EXWriter:
             o.append(f" scale factor set="
                      f"{sf_names[id(eft.scale_factor_set)]}")
         o.append("\n")
-        o.append(f"  #Nodes={self._eftDistinctNodeCount(eft)}\n")
+        o.append(f"  #Nodes={self._eftLocalNodeCount(eft)}\n")
         scaled = eft.scale_factor_set is not None
         # group consecutive functions with identical term node lists,
         # never spanning basis nodes (mirrors Zinc's grouping)
