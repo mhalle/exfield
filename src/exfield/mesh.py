@@ -443,7 +443,7 @@ class Mesh:
     skipped : list of str — constructs passed over rather than raised on.
         Check this after reading; anything here is silently missing.
     declared_unit : optional unit string set by the caller (EX files state
-        units nowhere; see EXFIELD_GOTCHAS.md).
+        units nowhere; see the hazards section of README.md).
     fingerprint : optional template fingerprint dict (see fingerprint.py).
     """
 
@@ -517,8 +517,8 @@ class Mesh:
     def coordinate_field_names(self):
         """Names of all coordinate-type fields. Real scaffolds carry
         several (e.g. 'coordinates', 'straight coordinates', 'vagus
-        coordinates') and picking the wrong one is silent — see
-        EXFIELD_GOTCHAS.md §1."""
+        coordinates') and picking the wrong one is silent — see the
+        hazards section of README.md."""
         return [f.name for f in self.fields.values() if f.is_coordinate]
 
     @property

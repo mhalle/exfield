@@ -584,3 +584,94 @@ class TestAgainstVTK:
                                    str(tmp_path / "single_roundtrip.vtu"),
                                    seed=5)
         assert worst < 1e-9, worst
+
+
+# ------------------------------------------------ non-3-component geometry
+#
+# Every fixture above is 3-component, which is what let a 2-component
+# coordinate field write a NumberOfComponents="3" Points array holding
+# 2-component data: VTK reads consecutive (x, y) pairs as (x, y, z)
+# triples, silently dropping a third of the points and rotating the rest
+# onto the wrong axes. Planar scaffolds are ordinary, so this is
+# reachable, and it fails without raising anything.
+
+
+def _planar_exf(n_components=2):
+    """A one-element bilinear square whose coordinate field has
+    ``n_components`` components (extra components are zero)."""
+    corners = [(0.0, 0.0), (3.0, 0.0), (0.0, 5.0), (3.0, 5.0)]
+    names = ["x", "y", "z", "w"][:n_components]
+    declaration = ("1) coordinates, coordinate, rectangular cartesian, "
+                   f"real, #Components={n_components}")
+    node_component = "\n".join(f" {n}.  #Values=1 (value)" for n in names)
+    element_component = "\n".join(
+        f" {n}. l.Lagrange*l.Lagrange, no modify, standard node based.\n"
+        "  #Nodes=4\n"
+        + "".join(f"  {i}. #Values=1\n   Value labels: value\n"
+                  for i in range(1, 5)).rstrip("\n")
+        for n in names)
+    nodes = "\n".join(
+        f"Node: {i}\n"
+        + "\n".join(f" {(list(c) + [0.0, 0.0])[k]}"
+                    for k in range(n_components))
+        for i, c in enumerate(corners, start=1))
+    return f"""EX Version: 3
+Region: /
+!#nodeset nodes
+Define node template: node1
+Shape. Dimension=0
+#Fields=1
+{declaration}
+{node_component}
+Node template: node1
+{nodes}
+!#mesh mesh2d, dimension=2, face mesh=mesh1d, nodeset=nodes
+Define element template: element1
+Shape. Dimension=2, line*line
+#Scale factor sets=0
+#Nodes=4
+#Fields=1
+{declaration}
+{element_component}
+Element template: element1
+Element: 1
+ Nodes:
+ 1 2 3 4
+"""
+
+
+class TestNonThreeComponentGeometry:
+    def test_two_component_field_pads_to_z_zero(self, tmp_path):
+        mesh = exfield.loads(_planar_exf(2))
+        path = str(tmp_path / "planar.vtu")
+        info = exfield.export_vtu(mesh, path)
+        piece, arrays = _parse_vtu(path)
+        points = arrays[("Points", "Points")]
+        # declared point count and payload must agree; z padded with 0
+        assert points.shape == (info["points"], 3)
+        assert int(piece.get("NumberOfPoints")) == len(points)
+        assert np.all(points[:, 2] == 0.0)
+        assert {tuple(p[:2]) for p in points} == {
+            (0.0, 0.0), (3.0, 0.0), (0.0, 5.0), (3.0, 5.0)}
+
+    def test_two_component_tessellated_pads_too(self, tmp_path):
+        mesh = exfield.loads(_planar_exf(2))
+        path = str(tmp_path / "planar_tess.vtu")
+        info = exfield.export_vtu(mesh, path, tessellate=2)
+        piece, arrays = _parse_vtu(path)
+        points = arrays[("Points", "Points")]
+        assert points.shape == (info["points"], 3)
+        assert int(piece.get("NumberOfPoints")) == len(points)
+        assert np.all(points[:, 2] == 0.0)
+
+    def test_three_component_geometry_is_unchanged(self, tmp_path):
+        mesh = exfield.loads(_planar_exf(3))
+        path = str(tmp_path / "planar3.vtu")
+        info = exfield.export_vtu(mesh, path)
+        _piece, arrays = _parse_vtu(path)
+        assert arrays[("Points", "Points")].shape == (info["points"], 3)
+
+    def test_more_than_three_components_refused(self, tmp_path):
+        mesh = exfield.loads(_planar_exf(4))
+        with pytest.raises(ValueError, match="3 components"):
+            exfield.export_vtu(mesh, str(tmp_path / "four.vtu"))

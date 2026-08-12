@@ -9,7 +9,7 @@ dofs.
 
 ``ArclengthTable`` integrates ``|dx/dxi|`` by Gauss-Legendre quadrature
 over a *chain* of 1-D elements. Two hazards it is shaped around (see
-EXFIELD_GOTCHAS.md §2):
+README.md, "The API is shaped around silent-wrong-geometry hazards"):
 
 * Over a branching mesh, summing all elements silently sums the branches
   too — the most likely wrong number a user will produce. ``build``
@@ -197,13 +197,23 @@ class Evaluator:
         n_comp = field.number_of_components
         nodeset = self.model.nodesets[
             self.model.element_meshes[dimension].nodeset_name]
-        basis_by_comp = []
-        P = None
+        # exfield requires all components to share one basis (true of all
+        # SPARC scaffolds); mixed-basis components would need per-component
+        # phi vectors. Check BEFORE filling P: P is sized from component
+        # 0's basis, so a later component with more functions would
+        # otherwise crash in the fill loop with a bare IndexError instead
+        # of this message. Bases are interned in basis._BASIS_CACHE, so
+        # identity comparison is exact here.
+        basis_by_comp = [element.template.efts[(field.name, c)].basis
+                         for c in range(n_comp)]
+        for b in basis_by_comp[1:]:
+            if b is not basis_by_comp[0]:
+                raise EvaluationError(
+                    f"Field {field.name!r} components use different bases "
+                    f"on element {element_id}; not supported")
+        P = np.zeros((basis_by_comp[0].number_of_functions, n_comp))
         for c in range(n_comp):
             eft = element.template.efts[(field.name, c)]
-            basis_by_comp.append(eft.basis)
-            if P is None:
-                P = np.zeros((eft.basis.number_of_functions, n_comp))
             for fn, terms in enumerate(eft.functions):
                 total = 0.0
                 for term in terms:
@@ -219,14 +229,6 @@ class Evaluator:
                         value = value * element.scale_factors[sf_index]
                     total += value
                 P[fn, c] = total
-        # exfield requires all components to share one basis (true of all
-        # SPARC scaffolds); mixed-basis components would need per-component
-        # phi vectors.
-        for b in basis_by_comp[1:]:
-            if b is not basis_by_comp[0]:
-                raise EvaluationError(
-                    f"Field {field.name!r} components use different bases "
-                    f"on element {element_id}; not supported")
         result = (P, basis_by_comp[0])
         self._param_cache[(dimension, element_id)] = result
         return result

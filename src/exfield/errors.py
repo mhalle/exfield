@@ -27,9 +27,10 @@ class ExSyntaxError(ExError):
 class UnsupportedExFeature(ExError):
     """Valid EX format feature that exfield deliberately does not support.
 
-    The declined list (see EXFIELD_PORTING_SPEC.md): EX version 1 (legacy,
-    unversioned), multiple regions, time sequences, simplex and polygon
-    element shapes, element-based (grid) field values, indexed fields.
+    The declined list (see the Scope section of README.md): EX version 1
+    (legacy, unversioned), multiple regions, time sequences, simplex and
+    polygon element shapes, element-based (grid) field values, indexed
+    fields.
     If you extend scope, extend this list rather than silently accepting.
     """
 
