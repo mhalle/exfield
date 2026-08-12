@@ -1,7 +1,3 @@
-```bash
-uv sync
-```
-
 # exfield
 
 Read, evaluate and write OpenCMISS-Zinc **EX/EXF finite element
