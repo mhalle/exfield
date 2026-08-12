@@ -4,7 +4,15 @@ exfield is **alpha**: the API and any interchange conventions may
 change between 0.x releases. Entries below correspond to the working
 rounds recorded in the map-core project log.
 
-## Unreleased
+## 0.5.2 — 2026-08-12
+
+Bug-fix release. Two behaviour changes worth calling out before the
+detail: **`exreader.load` is removed** (never exported, never
+documented, imported by nothing — it shadowed `exfield.load` while
+dropping gzip support), and two exception contracts tightened —
+`export_vtu` now raises `ValueError` for partially-covered
+`extra_fields` (was a mid-write `EvaluationError`) and for
+>3-component geometry (was a silently corrupt file).
 
 **Three bugs found by review, all in inputs the corpus never reaches.**
 Every test fixture is 3-component, and every EFT in the vagus scaffold
