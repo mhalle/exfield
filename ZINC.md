@@ -338,6 +338,16 @@ as porting errors:
   `at_boundary`, `runner_up_residual` and `ambiguous`, and *refuses*
   nearest-point queries on branching 1-D meshes without an explicit
   element subset.
+* **Quoted group names are unquoted.** Zinc reads the token after
+  `Group name:` as rest-of-line and uses it verbatim, so a file that
+  quotes its group names yields groups whose names contain quote
+  characters. Real corpora quote unconditionally — all 955 group names
+  in the Auckland whole-body `arteries.exf` are quoted, `"systemic"`
+  included — so exfield strips a *complete* quoted token (same escape
+  rules as any EX string) and leaves everything else alone. The writer
+  deliberately does **not** re-quote on output, because Zinc would read
+  those quotes back into the name and "Zinc reads exfield's output
+  identically" is a validated property.
 * **Output is EX Version 3 only**, though both v2 and v3 are read (v3
   alone would have excluded Zinc's own v2 test corpus).
 * **Scope is declined loudly.** EX v1, simplex/polygon shapes,

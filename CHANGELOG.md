@@ -4,6 +4,42 @@ exfield is **alpha**: the API and any interchange conventions may
 change between 0.x releases. Entries below correspond to the working
 rounds recorded in the map-core project log.
 
+## 0.5.3 — 2026-08-13
+
+Fixed
+- **Quoted `Group name:` declarations kept their quotes.** `m.groups`
+  was keyed `'"Left common carotid artery"'`, so callers reading the
+  Auckland whole-body scaffolds needed
+  `name if name in m.groups else '"%s"' % name` at every lookup — and
+  the same corpus is inconsistent, since `arteries.exf` and `veins.exf`
+  quote every name while `nerve_centerlines.exf` quotes none.
+
+  This is a **deliberate divergence from Zinc**, which reads the token
+  as rest-of-line and uses it verbatim; exfield was previously
+  bug-compatible. The evidence that the quotes are syntax rather than
+  content: all 955 group names in `arteries.exf` are quoted, including
+  single words like `"systemic"` that need no quoting under any
+  escaping convention. Only a *complete* quoted token is stripped,
+  using the same escape rules as every other EX string, so an unquoted
+  name containing spaces — which Zinc's writer emits verbatim — is
+  untouched.
+
+  Group keys therefore change for files that quote them. Defensive
+  lookups of the form above keep working (they try the unquoted name
+  first); a hardcoded `'"systemic"'` does not.
+
+  The writer still emits names verbatim and is **not** changed to
+  re-quote: Zinc would read the quotes back into the name, and Zinc
+  reading exfield's output identically is a validated property.
+  Round-trip stays stable regardless, since an unquoted rest-of-line
+  preserves everything but surrounding whitespace. Writer output for
+  the vagus and cube scaffolds is byte-identical to 0.5.2.
+
+  Other name tokens were checked and need no change: node and element
+  template names and string field values already go through the
+  quote-aware reader, and nodeset, mesh and host-mesh names already go
+  through `make_valid_token` on the way out.
+
 ## 0.5.2 — 2026-08-12
 
 Bug-fix release. Two behaviour changes worth calling out before the

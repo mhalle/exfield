@@ -259,6 +259,73 @@ class TestRedeclaration:
             exfield.loads(_redeclared_field_text(element_component="theta"))
 
 
+class TestQuotedGroupNames:
+    """Group names are the one token where exfield diverges from Zinc.
+
+    Zinc reads ``Group name:`` as rest-of-line and uses it verbatim, so
+    quoted names keep their quotes. Real corpora quote unconditionally —
+    all 955 group names in the Auckland arteries.exf are quoted,
+    including single words — so exfield unquotes a fully quoted token.
+    """
+
+    HEADER = ("EX Version: 3\nRegion: /\n!#nodeset nodes\n"
+              "Define node template: n1\nShape. Dimension=0\n#Fields=1\n"
+              "1) coordinates, coordinate, rectangular cartesian, real, "
+              "#Components=1\n x. #Values=1 (value)\n"
+              "Node template: n1\nNode: 1\n 0.0\nNode: 2\n 1.0\n")
+
+    def _groups(self, *names):
+        text = self.HEADER + "".join(
+            f"Group name: {n}\n!#nodeset nodes\nNode group:\n1..2\n"
+            for n in names)
+        return exfield.loads(text).groups
+
+    def test_quoted_name_loses_its_quotes(self):
+        assert "Left common carotid artery" in self._groups(
+            '"Left common carotid artery"')
+
+    def test_single_word_quoted_name(self):
+        """The tell that quoting is syntax, not content: real files
+        quote names that need no quoting."""
+        assert "systemic" in self._groups('"systemic"')
+
+    def test_unquoted_name_untouched(self):
+        assert "bolser_3" in self._groups("bolser_3")
+
+    def test_unquoted_name_with_spaces_survives(self):
+        """Zinc's writer emits these verbatim; unquoting must not turn
+        into tokenising, which would truncate at the first space."""
+        assert "vagus nerve trunk" in self._groups("vagus nerve trunk")
+
+    def test_escaped_quote_inside_name(self):
+        assert 'a"b' in self._groups('"a\\"b"')
+
+    def test_partially_quoted_name_left_alone(self):
+        """Not a complete quoted token, so not syntax."""
+        assert '"unterminated' in self._groups('"unterminated')
+
+    def test_mixed_quoting_in_one_file(self):
+        """The corpus case: arteries.exf quotes, nerve_centerlines.exf
+        does not, and callers had to shim between them."""
+        g = self._groups('"Left common carotid artery"', "bolser_3")
+        assert {"Left common carotid artery", "bolser_3"} <= set(g)
+
+    def test_round_trip_is_stable(self):
+        """The writer deliberately does NOT re-quote: Zinc would read
+        those quotes back as part of the name, and Zinc reading
+        exfield's output identically is a validated property. An
+        unquoted rest-of-line preserves the spaces anyway."""
+        text = self.HEADER + ('Group name: "Left common carotid artery"\n'
+                              "!#nodeset nodes\nNode group:\n1..2\n")
+        once = exfield.dumps(exfield.loads(text))
+        assert "Group name: Left common carotid artery" in once
+        assert '"' not in [line for line in once.splitlines()
+                           if line.startswith("Group name:")][0]
+        twice = exfield.dumps(exfield.loads(once))
+        assert once == twice
+        assert "Left common carotid artery" in exfield.loads(once).groups
+
+
 class TestStrings:
     def test_quoted_string_with_escapes(self):
         text = (

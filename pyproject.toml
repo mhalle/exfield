@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exfield"
-version = "0.5.2"
+version = "0.5.3"
 description = "Read, evaluate and write OpenCMISS-Zinc EX/EXF finite element scaffolds with NumPy as the only dependency"
 readme = "README.md"
 # floor is tested, not aspirational: the suite passes on 3.10/3.12/3.14

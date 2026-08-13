@@ -52,6 +52,44 @@ _UNSUPPORTED_VALUE_TYPES = (
 )
 
 
+def _unquote_name(name):
+    """Unquote a ``Region:``/``Group name:`` token if it is fully quoted.
+
+    **A deliberate divergence from Zinc** (the only one in this reader;
+    see ZINC.md). Zinc reads this token as rest-of-line and uses it
+    verbatim, so a file written with quoted group names round-trips
+    through Zinc with the quote characters *inside* the name. Real
+    corpora do this: every one of the 955 group names in the Auckland
+    whole-body ``arteries.exf`` is quoted, including single words like
+    ``"systemic"`` that need no quoting under any escaping convention —
+    unconditional quoting by the producing tool, i.e. syntax rather
+    than part of the name. Following Zinc exactly would leave callers
+    writing ``name if name in groups else '"%s"' % name`` forever.
+
+    Only a *complete* quoted token is unquoted, using the same escape
+    rules as :meth:`Scanner.read_ex_string`; anything else (including a
+    name that merely starts with a quote) is returned unchanged, so an
+    unquoted name containing spaces — which Zinc's writer emits
+    verbatim — survives intact.
+
+    The writer deliberately does NOT re-quote on output: Zinc would
+    read those quotes back as part of the name, and "Zinc reads
+    exfield's output identically" is a validated property. Round-trip
+    stays stable because an unquoted rest-of-line preserves everything
+    but leading and trailing whitespace.
+    """
+    if len(name) < 2 or name[0] not in "\"'" or name[-1] != name[0]:
+        return name
+    scanner = Scanner(name)
+    try:
+        unquoted = scanner.read_ex_string()
+    except ExSyntaxError:
+        return name                      # unterminated / malformed
+    if scanner.pos != len(name):
+        return name                      # quote closed early: not one token
+    return unquoted
+
+
 class _NodeTemplate:
     """Reader-side node template: field list plus per-field NFTs."""
 
@@ -1278,7 +1316,7 @@ class EXReader:
         else:
             if not (s.match_literal("roup name ") and s.match_one_of(":")):
                 raise self.error("Truncated 'Group name :' token")
-        name = s.read_rest_of_line().strip(" \t")
+        name = _unquote_name(s.read_rest_of_line().strip(" \t"))
         if first_char == "R":
             if not name.startswith("/"):
                 raise self.error(
